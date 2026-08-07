@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.5.0';
+  const VERSION = '1.6.0';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -699,9 +699,15 @@
       const bx = (azm) => ((rel(azm) + 180) * 300) / 360;
       const maxEl = Math.max(tb.max.el, 5);
       const minEl = Math.min(tb.min.el, -2);
-      const yTop = 14;
-      const yHor = 110;
-      const nightDepth = 26;
+      // The plot is tall relative to its width so the chart fills the card
+      // instead of floating in it; the axis furniture below the horizon keeps
+      // the same footprint it had, so label sizes are unchanged.
+      // viewBox aspect is tuned to the box a 6-row card leaves for the chart,
+      // so it fills both dimensions instead of letterboxing in one of them
+      const VB_H = 248;
+      const yTop = 18;
+      const yHor = 185;
+      const nightDepth = 22;
       const Y = (e) => (e >= 0 ? yHor - (e / maxEl) * (yHor - yTop) : yHor + (-e / -minEl) * nightDepth);
 
       // curve segments, broken where the heading-up x-axis wraps
@@ -751,12 +757,20 @@
           const wc = this._wallColor(w);
           const rects = [];
           const add = (l, r) => {
-            l = Math.max(0, l);
-            r = Math.min(300, r);
-            if (r > l)
-              rects.push(
-                `<rect x="${l.toFixed(1)}" y="14" width="${(r - l).toFixed(1)}" height="96" fill="${wc}" opacity="0.10"></rect>`
-              );
+            const L = Math.max(0, l);
+            const R = Math.min(300, r);
+            if (R <= L) return;
+            rects.push(
+              `<rect x="${L.toFixed(1)}" y="${yTop}" width="${(R - L).toFixed(1)}" height="${(yHor - yTop).toFixed(0)}" fill="${wc}" opacity="0.16"></rect>`
+            );
+            // edges only where the band truly starts/ends, not where it was
+            // clipped by the edge of the chart
+            for (const [x, real] of [[L, l >= 0], [R, r <= 300]]) {
+              if (real)
+                rects.push(
+                  `<line x1="${x.toFixed(1)}" y1="${yTop}" x2="${x.toFixed(1)}" y2="${yHor}" stroke="${wc}" stroke-width="1" opacity="0.5"></line>`
+                );
+            }
           };
           const wins = glassWindows(tb.pts, w.bearing, c.sun_window, c.min_elevation);
           let labelX = bx(w.bearing);
@@ -772,12 +786,13 @@
             if (i === 0) labelX = x1;
           });
           const short = esc(String(w.name || '').split(/\s+/)[0].toUpperCase());
-          // anchored to each band's left edge, and stepped down per wall, so
-          // labels stay apart even when the bands themselves overlap heavily
-          const ly = 105 - w.slot * 10;
+          // anchored to each band's left edge and stacked upward per wall, so
+          // labels stay apart when the bands overlap and clear the horizon
+          // caption sitting at the bottom-left
+          const ly = yHor - 18 - w.slot * 12;
           return (
             rects.join('') +
-            `<text x="${Math.min(250, Math.max(2, labelX + 3)).toFixed(1)}" y="${ly}" text-anchor="start" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.85">${short} ${Math.round(w.bearing)}°</text>`
+            `<text x="${Math.min(250, Math.max(2, labelX + 4)).toFixed(1)}" y="${ly}" text-anchor="start" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.95">${short} ${Math.round(w.bearing)}°</text>`
           );
         })
         .join('');
@@ -790,10 +805,10 @@
         const riseX = bx(solarPos(tb.rise, lat, lon).az).toFixed(1);
         const setX = bx(solarPos(tb.set, lat, lon).az).toFixed(1);
         riseSet = `
-          <line x1="${riseX}" y1="110" x2="${riseX}" y2="117" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
-          <line x1="${setX}" y1="110" x2="${setX}" y2="117" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
-          <text x="${riseX}" y="144" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">rise ${fmtTime(hass, tb.rise)}</text>
-          <text x="${setX}" y="144" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">set ${fmtTime(hass, tb.set)}</text>`;
+          <line x1="${riseX}" y1="${yHor}" x2="${riseX}" y2="${yHor + 7}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
+          <line x1="${setX}" y1="${yHor}" x2="${setX}" y2="${yHor + 7}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
+          <text x="${riseX}" y="${yHor + 36}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">rise ${fmtTime(hass, tb.rise)}</text>
+          <text x="${setX}" y="${yHor + 36}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">set ${fmtTime(hass, tb.set)}</text>`;
       }
 
       const sunX = bx(az).toFixed(1);
@@ -805,8 +820,8 @@
 
       return this._card(`
         ${this._header(c.name, daylight, C.orange)}
-        <div style="margin:auto 0; padding-top:14px;">
-        <svg width="100%" height="172" viewBox="0 0 300 172" style="display:block; overflow:visible;" role="img" aria-label="Sun path today">
+        <div style="flex:1 1 auto; min-height:0; display:flex; padding-top:14px;">
+        <svg width="100%" height="100%" viewBox="0 0 300 ${VB_H}" preserveAspectRatio="xMidYMid meet" style="display:block; overflow:visible;" role="img" aria-label="Sun path today">
           <defs>
             <linearGradient id="sc-path-g" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="${C.orange}" stop-opacity="0.38"></stop>
@@ -815,22 +830,22 @@
           </defs>
           ${bands}
           <path d="M 146 8 L 150 2 L 154 8 Z" fill="${C.faint}"></path>
-          <line x1="150" y1="12" x2="150" y2="110" stroke="${C.line}" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="2 4"></line>
+          <line x1="150" y1="12" x2="150" y2="${yHor}" stroke="${C.line}" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="2 4"></line>
           <text x="158" y="10" text-anchor="start" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">${heading}°</text>
           <path d="${dayFill}" fill="url(#sc-path-g)"></path>
           <path d="${fullCurve}" fill="none" stroke="${C.line}" stroke-opacity="0.22" stroke-width="1.5"></path>
           <path d="${dayStroke}" fill="none" stroke="${C.orange}" stroke-width="1.5" opacity="0.9"></path>
-          <line x1="0" y1="110" x2="300" y2="110" stroke="${C.line}" stroke-opacity="0.16" stroke-width="1"></line>
-          <text x="2" y="106" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="8" letter-spacing="1">HORIZON 0°</text>
+          <line x1="0" y1="${yHor}" x2="300" y2="${yHor}" stroke="${C.line}" stroke-opacity="0.16" stroke-width="1"></line>
+          <text x="2" y="${yHor - 4}" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="8" letter-spacing="1">HORIZON 0°</text>
           <line x1="${noonX}" y1="${noonY}" x2="${noonX}" y2="10" stroke="${C.line}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2 3"></line>
           <text x="${noonX}" y="8" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="9">noon ${fmtSigned(tb.max.el, 0)}</text>
           ${riseSet}
-          <text x="${bx(0).toFixed(1)}" y="124" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="10">N</text>
-          <text x="${bx(90).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">E</text>
-          <text x="${bx(180).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">S</text>
-          <text x="${bx(270).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">W</text>
+          <text x="${bx(0).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="10">N</text>
+          <text x="${bx(90).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">E</text>
+          <text x="${bx(180).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">S</text>
+          <text x="${bx(270).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">W</text>
           ${sunMarker(sunX, sunY, C.blue, C)}
-          <text x="298" y="166" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="9" letter-spacing="1">AZIMUTH → · HEADING-UP ${heading}°</text>
+          <text x="298" y="${VB_H - 6}" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="9" letter-spacing="1">AZIMUTH → · HEADING-UP ${heading}°</text>
         </svg>
         </div>
         <div style="display:flex; justify-content:space-between; gap:12px; padding-top:14px; border-top:1px solid ${C.divider}; margin-top:10px;">

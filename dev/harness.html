@@ -7,8 +7,11 @@
   body { margin:0; background:#131318; padding:36px; display:flex; flex-direction:column; gap:28px; font-family:monospace; }
   h2 { color:#8b8d96; font:12px monospace; margin:0; letter-spacing:0.1em; text-transform:uppercase; }
   .row { display:flex; gap:20px; align-items:stretch; flex-wrap:wrap; }
-  .col { width:340px; display:flex; }
-  .col > * { flex:1; }
+  /* fixed height + min-height:0 mirrors how HA's sections grid sizes cards */
+  .col { width:340px; height:376px; display:flex; flex-direction:column; gap:8px; }
+  .col > :last-child { flex:1; min-height:0; }
+  /* approximates HA's sections-layout heading card */
+  .hdg { font:500 16px/1.3 system-ui,-apple-system,sans-serif; color:var(--primary-text-color,#e1e1e1); padding:0 4px; }
   /* HA default dark theme */
   #dark {
     --ha-card-background: #1c1c1c;
@@ -97,17 +100,21 @@ const WALLS = [
 
 function addCards(rowId, hass, extraCfg = {}) {
   const cfgs = [
-    ['sun-cards-bearing', { heading: 325, walls: WALLS, sun_window: 78, min_elevation: 3,
+    ['sun-cards-bearing', 'Sun & windows', { heading: 325, walls: WALLS, sun_window: 78, min_elevation: 3,
       weather_entity: 'weather.kues', bypass_entity: 'input_boolean.shades_ignore_weather' }],
-    ['sun-cards-elevation', {}],
-    ['sun-cards-path', { heading: 325, walls: WALLS }],
+    ['sun-cards-elevation', 'Elevation', {}],
+    ['sun-cards-path', "Today's path", { heading: 325, walls: WALLS, sun_window: 78, min_elevation: 3 }],
   ];
-  for (const [tag, cfg] of cfgs) {
+  for (const [tag, heading, cfg] of cfgs) {
     const card = document.createElement(tag);
     card.setConfig({ ...cfg, ...extraCfg });
     card.hass = hass;
     const wrap = document.createElement('div');
     wrap.className = 'col';
+    const h = document.createElement('div');
+    h.className = 'hdg';
+    h.textContent = heading;
+    wrap.appendChild(h);
     wrap.appendChild(card);
     document.getElementById(rowId).appendChild(wrap);
   }

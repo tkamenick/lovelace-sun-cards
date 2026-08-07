@@ -10,6 +10,11 @@ max_columns: 3
 sections:
   - type: grid
     cards:
+      # The cards carry no title of their own, so the section heading is the
+      # single label for each column — name what the card answers, not the
+      # card type ("Sun & windows", not "Sun bearing").
+      - type: heading
+        heading: Sun & windows
       - type: custom:sun-cards-bearing
         heading: 325
         walls:
@@ -28,11 +33,15 @@ sections:
         bypass_entity: input_boolean.shades_ignore_weather
   - type: grid
     cards:
+      - type: heading
+        heading: Elevation
       - type: custom:sun-cards-elevation
         azimuth_entity: sensor.sun_azimuth
         elevation_entity: sensor.sun_elevation
   - type: grid
     cards:
+      - type: heading
+        heading: Today's path
       - type: custom:sun-cards-path
         heading: 325
         walls:
