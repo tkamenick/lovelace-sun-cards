@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.6.0';
+  const VERSION = '1.7.0';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -279,16 +279,26 @@
       }, 60000);
       // the marker size depends on the card's rendered width, so recompute it
       // whenever the card is resized (column changes, sidebar toggle, rotation)
+      const resync = () => {
+        if (!this.shadowRoot || !this.isConnected) return;
+        normalizeSunMarkers(this.shadowRoot);
+        this._afterRender();
+      };
       if (typeof ResizeObserver === 'function') {
-        this._ro = new ResizeObserver(() => normalizeSunMarkers(this.shadowRoot));
+        this._ro = new ResizeObserver(resync);
         this._ro.observe(this);
       }
+      // backstop: catches window resizes even where ResizeObserver is
+      // unavailable or throttled, and costs nothing when nothing changed
+      this._onWinResize = resync;
+      window.addEventListener('resize', this._onWinResize);
       if (this._hass && this._config) this._render();
     }
 
     disconnectedCallback() {
       clearInterval(this._timer);
       this._ro?.disconnect();
+      if (this._onWinResize) window.removeEventListener('resize', this._onWinResize);
     }
 
     _signature() {
@@ -377,7 +387,13 @@
         });
       });
       normalizeSunMarkers(this.shadowRoot);
+      this._afterRender();
     }
+
+    /* Cards whose drawing depends on their own rendered size override this.
+       It may call _render() once more; the second pass measures the same box
+       and stops, so there is no loop. */
+    _afterRender() {}
 
     _pal() {
       return palette(this._hass?.themes?.darkMode !== false);
@@ -684,6 +700,19 @@
     };
     static cardSize = 6;
 
+    /* The chart's viewBox height is derived from the box this card actually
+       gets, so measure it after painting and re-render if it moved. */
+    _afterRender() {
+      const el = this.shadowRoot.querySelector('[data-chart]');
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width < 60 || r.height < 60) return; // not laid out yet
+      const b = this._box;
+      if (b && Math.abs(b.w - r.width) < 1.5 && Math.abs(b.h - r.height) < 1.5) return;
+      this._box = { w: r.width, h: r.height };
+      this._render();
+    }
+
     _template() {
       const C = this._pal();
       const c = this._config;
@@ -699,15 +728,23 @@
       const bx = (azm) => ((rel(azm) + 180) * 300) / 360;
       const maxEl = Math.max(tb.max.el, 5);
       const minEl = Math.min(tb.min.el, -2);
-      // The plot is tall relative to its width so the chart fills the card
-      // instead of floating in it; the axis furniture below the horizon keeps
-      // the same footprint it had, so label sizes are unchanged.
-      // viewBox aspect is tuned to the box a 6-row card leaves for the chart,
-      // so it fills both dimensions instead of letterboxing in one of them
-      const VB_H = 248;
-      const yTop = 18;
-      const yHor = 185;
-      const nightDepth = 22;
+      /* The viewBox is 300 wide by definition (one unit ≈ 1.2° of azimuth) and
+         its *height* is derived from the box the card actually gives us, so the
+         chart fills that box at any card width instead of letterboxing in one
+         direction. Because the scale therefore varies with width, every size
+         below is authored in CSS px and converted through u() — otherwise the
+         labels would balloon on a wide card. Strokes use non-scaling-stroke,
+         which is already in px. */
+      const box = this._box || { w: 269, h: 255 };
+      const U = 300 / box.w; // viewBox units per CSS px
+      const u = (v) => v * U;
+      const VB_H = Math.max(u(120), box.h * U);
+      const yTop = u(16);
+      const yHor = Math.max(yTop + u(40), VB_H - u(62)); // 62px of axis furniture
+      const nightDepth = u(22);
+      const F8 = u(8).toFixed(2);
+      const F9 = u(9).toFixed(2);
+      const F10 = u(10).toFixed(2);
       const Y = (e) => (e >= 0 ? yHor - (e / maxEl) * (yHor - yTop) : yHor + (-e / -minEl) * nightDepth);
 
       // curve segments, broken where the heading-up x-axis wraps
@@ -761,14 +798,14 @@
             const R = Math.min(300, r);
             if (R <= L) return;
             rects.push(
-              `<rect x="${L.toFixed(1)}" y="${yTop}" width="${(R - L).toFixed(1)}" height="${(yHor - yTop).toFixed(0)}" fill="${wc}" opacity="0.16"></rect>`
+              `<rect x="${L.toFixed(1)}" y="${yTop.toFixed(1)}" width="${(R - L).toFixed(1)}" height="${(yHor - yTop).toFixed(1)}" fill="${wc}" opacity="0.16"></rect>`
             );
             // edges only where the band truly starts/ends, not where it was
             // clipped by the edge of the chart
             for (const [x, real] of [[L, l >= 0], [R, r <= 300]]) {
               if (real)
                 rects.push(
-                  `<line x1="${x.toFixed(1)}" y1="${yTop}" x2="${x.toFixed(1)}" y2="${yHor}" stroke="${wc}" stroke-width="1" opacity="0.5"></line>`
+                  `<line x1="${x.toFixed(1)}" y1="${yTop.toFixed(1)}" x2="${x.toFixed(1)}" y2="${yHor.toFixed(1)}" stroke="${wc}" stroke-width="1" vector-effect="non-scaling-stroke" opacity="0.5"></line>`
                 );
             }
           };
@@ -789,10 +826,10 @@
           // anchored to each band's left edge and stacked upward per wall, so
           // labels stay apart when the bands overlap and clear the horizon
           // caption sitting at the bottom-left
-          const ly = yHor - 18 - w.slot * 12;
+          const ly = (yHor - u(18) - w.slot * u(12)).toFixed(1);
           return (
             rects.join('') +
-            `<text x="${Math.min(250, Math.max(2, labelX + 4)).toFixed(1)}" y="${ly}" text-anchor="start" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.95">${short} ${Math.round(w.bearing)}°</text>`
+            `<text x="${Math.min(250, Math.max(2, labelX + 4)).toFixed(1)}" y="${ly}" text-anchor="start" fill="${wc}" font-family="${MONO_SVG}" font-size="${F9}" opacity="0.95">${short} ${Math.round(w.bearing)}°</text>`
           );
         })
         .join('');
@@ -804,11 +841,13 @@
       if (tb.rise && tb.set) {
         const riseX = bx(solarPos(tb.rise, lat, lon).az).toFixed(1);
         const setX = bx(solarPos(tb.set, lat, lon).az).toFixed(1);
+        const tickY = (yHor + u(7)).toFixed(1);
+        const labY = (yHor + u(37)).toFixed(1);
         riseSet = `
-          <line x1="${riseX}" y1="${yHor}" x2="${riseX}" y2="${yHor + 7}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
-          <line x1="${setX}" y1="${yHor}" x2="${setX}" y2="${yHor + 7}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1"></line>
-          <text x="${riseX}" y="${yHor + 36}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">rise ${fmtTime(hass, tb.rise)}</text>
-          <text x="${setX}" y="${yHor + 36}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="10">set ${fmtTime(hass, tb.set)}</text>`;
+          <line x1="${riseX}" y1="${yHor.toFixed(1)}" x2="${riseX}" y2="${tickY}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <line x1="${setX}" y1="${yHor.toFixed(1)}" x2="${setX}" y2="${tickY}" stroke="${C.line}" stroke-opacity="0.3" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <text x="${riseX}" y="${labY}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="${F10}">rise ${fmtTime(hass, tb.rise)}</text>
+          <text x="${setX}" y="${labY}" text-anchor="middle" fill="${C.ink}" font-family="${MONO_SVG}" font-size="${F10}">set ${fmtTime(hass, tb.set)}</text>`;
       }
 
       const sunX = bx(az).toFixed(1);
@@ -820,8 +859,9 @@
 
       return this._card(`
         ${this._header(c.name, daylight, C.orange)}
-        <div style="flex:1 1 auto; min-height:0; display:flex; padding-top:14px;">
-        <svg width="100%" height="100%" viewBox="0 0 300 ${VB_H}" preserveAspectRatio="xMidYMid meet" style="display:block; overflow:visible;" role="img" aria-label="Sun path today">
+        <div style="flex:1 1 auto; min-height:0; padding-top:14px; display:flex;">
+        <div data-chart style="position:relative; flex:1 1 auto; min-height:0; display:flex;">
+        <svg width="100%" height="100%" viewBox="0 0 300 ${VB_H.toFixed(1)}" preserveAspectRatio="xMidYMid meet" style="display:block; overflow:visible;" role="img" aria-label="Sun path today">
           <defs>
             <linearGradient id="sc-path-g" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0" stop-color="${C.orange}" stop-opacity="0.38"></stop>
@@ -829,24 +869,31 @@
             </linearGradient>
           </defs>
           ${bands}
-          <path d="M 146 8 L 150 2 L 154 8 Z" fill="${C.faint}"></path>
-          <line x1="150" y1="12" x2="150" y2="${yHor}" stroke="${C.line}" stroke-opacity="0.12" stroke-width="1" stroke-dasharray="2 4"></line>
-          <text x="158" y="10" text-anchor="start" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">${heading}°</text>
+          <path d="M ${(150 - u(4)).toFixed(1)} ${u(8).toFixed(1)} L 150 ${u(2).toFixed(1)} L ${(150 + u(4)).toFixed(1)} ${u(8).toFixed(1)} Z" fill="${C.faint}"></path>
+          <line x1="150" y1="${u(12).toFixed(1)}" x2="150" y2="${yHor.toFixed(1)}" stroke="${C.line}" stroke-opacity="0.12" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="2 4"></line>
+          <text x="${(150 + u(8)).toFixed(1)}" y="${u(10).toFixed(1)}" text-anchor="start" fill="${C.faint}" font-family="${MONO_SVG}" font-size="${F9}">${heading}°</text>
           <path d="${dayFill}" fill="url(#sc-path-g)"></path>
-          <path d="${fullCurve}" fill="none" stroke="${C.line}" stroke-opacity="0.22" stroke-width="1.5"></path>
-          <path d="${dayStroke}" fill="none" stroke="${C.orange}" stroke-width="1.5" opacity="0.9"></path>
-          <line x1="0" y1="${yHor}" x2="300" y2="${yHor}" stroke="${C.line}" stroke-opacity="0.16" stroke-width="1"></line>
-          <text x="2" y="${yHor - 4}" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="8" letter-spacing="1">HORIZON 0°</text>
-          <line x1="${noonX}" y1="${noonY}" x2="${noonX}" y2="10" stroke="${C.line}" stroke-opacity="0.15" stroke-width="1" stroke-dasharray="2 3"></line>
-          <text x="${noonX}" y="8" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="9">noon ${fmtSigned(tb.max.el, 0)}</text>
+          <path d="${fullCurve}" fill="none" stroke="${C.line}" stroke-opacity="0.22" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
+          <path d="${dayStroke}" fill="none" stroke="${C.orange}" stroke-width="1.5" vector-effect="non-scaling-stroke" opacity="0.9"></path>
+          <line x1="0" y1="${yHor.toFixed(1)}" x2="300" y2="${yHor.toFixed(1)}" stroke="${C.line}" stroke-opacity="0.16" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+          <text x="2" y="${(yHor - u(4)).toFixed(1)}" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="${F8}" letter-spacing="${u(1).toFixed(2)}">HORIZON 0°</text>
+          <line x1="${noonX}" y1="${noonY}" x2="${noonX}" y2="${u(14).toFixed(1)}" stroke="${C.line}" stroke-opacity="0.15" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="2 3"></line>
+          <text x="${noonX}" y="${u(8).toFixed(1)}" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="${F9}">noon ${fmtSigned(tb.max.el, 0)}</text>
           ${riseSet}
-          <text x="${bx(0).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="10">N</text>
-          <text x="${bx(90).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">E</text>
-          <text x="${bx(180).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">S</text>
-          <text x="${bx(270).toFixed(1)}" y="${yHor + 16}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">W</text>
-          ${sunMarker(sunX, sunY, C.blue, C)}
-          <text x="298" y="${VB_H - 6}" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="9" letter-spacing="1">AZIMUTH → · HEADING-UP ${heading}°</text>
+          <text x="${bx(0).toFixed(1)}" y="${(yHor + u(17)).toFixed(1)}" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="${F10}">N</text>
+          <text x="${bx(90).toFixed(1)}" y="${(yHor + u(17)).toFixed(1)}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="${F10}">E</text>
+          <text x="${bx(180).toFixed(1)}" y="${(yHor + u(17)).toFixed(1)}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="${F10}">S</text>
+          <text x="${bx(270).toFixed(1)}" y="${(yHor + u(17)).toFixed(1)}" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="${F10}">W</text>
+          <text x="298" y="${(VB_H - u(6)).toFixed(1)}" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="${F9}" letter-spacing="${u(1).toFixed(2)}">AZIMUTH → · HEADING-UP ${heading}°</text>
         </svg>
+        <!-- overlaid rather than drawn in the chart above, so it keeps a fixed
+             pixel size however the chart is scaled to fit the card -->
+        <div style="position:absolute; left:${((Number(sunX) / 300) * 100).toFixed(3)}%; top:${((Number(sunY) / VB_H) * 100).toFixed(3)}%; transform:translate(-50%,-50%); pointer-events:none;">
+          <svg width="${SUN.ring * 2 + 4}" height="${SUN.ring * 2 + 4}" viewBox="${-SUN.ring - 2} ${-SUN.ring - 2} ${SUN.ring * 2 + 4} ${SUN.ring * 2 + 4}" style="display:block; overflow:visible;" aria-hidden="true">
+            ${sunMarker(0, 0, C.blue, C)}
+          </svg>
+        </div>
+        </div>
         </div>
         <div style="display:flex; justify-content:space-between; gap:12px; padding-top:14px; border-top:1px solid ${C.divider}; margin-top:10px;">
           <span style="font-family:${MONO}; font-size:10px; color:${C.faint}; white-space:nowrap;">${nowTxt}</span>
