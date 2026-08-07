@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -59,6 +59,43 @@
     link.rel = 'stylesheet';
     link.href = FONTS_URL;
     document.head.appendChild(link);
+  }
+
+  /* ── the sun marker ─────────────────────────────────────────────────────
+   *  One shape for all three cards: a filled dot, a knockout halo that lifts
+   *  it off whatever it overlaps (wall arcs, the day curve), and a dashed
+   *  ring. Geometry is identical everywhere; only the color changes, since
+   *  each card needs a different hue to stay legible against its own
+   *  background art. Sizes are CSS px — pass `k` (host viewBox units per CSS
+   *  px) when the host SVG is scaled, so every card renders the same size. */
+  const SUN = { dot: 5, halo: 7, ring: 10, dash: [2.5, 3] };
+  const HALO_FILL = 'var(--ha-card-background, var(--card-background-color, #1c1c1c))';
+  function sunMarker(x, y, color, C, { dim = 1 } = {}) {
+    return (
+      `<g data-sun>` +
+      `<circle cx="${x}" cy="${y}" data-r="${SUN.halo}" r="${SUN.halo}" fill="${HALO_FILL}" opacity="0.85"></circle>` +
+      `<circle cx="${x}" cy="${y}" data-r="${SUN.ring}" r="${SUN.ring}" fill="none" stroke="${color}" stroke-width="1" stroke-dasharray="${SUN.dash.join(' ')}" vector-effect="non-scaling-stroke" opacity="${(C.sunRing * dim).toFixed(2)}"></circle>` +
+      `<circle cx="${x}" cy="${y}" data-r="${SUN.dot}" r="${SUN.dot}" fill="${color}" opacity="${(C.sunFill * dim).toFixed(2)}"></circle>` +
+      `</g>`
+    );
+  }
+
+  /* Each card's SVG is scaled differently (the compass is fixed-size, the path
+     chart scales with the card width), so a fixed radius would render at a
+     different size in each one. Convert the px sizes above into user units
+     using the live transform, so every marker is the same size on screen. */
+  function normalizeSunMarkers(root) {
+    root.querySelectorAll('g[data-sun]').forEach((g) => {
+      const svg = g.ownerSVGElement;
+      const m = svg && svg.getScreenCTM();
+      if (!m || !m.a) return;
+      const scale = Math.abs(m.a);
+      g.querySelectorAll('circle[data-r]').forEach((c) => {
+        c.setAttribute('r', (Number(c.dataset.r) / scale).toFixed(2));
+      });
+      const ring = g.querySelector('circle[stroke-dasharray]');
+      if (ring) ring.setAttribute('stroke-dasharray', SUN.dash.map((d) => (d / scale).toFixed(2)).join(' '));
+    });
   }
 
   const esc = (s) =>
@@ -240,11 +277,18 @@
       this._timer = setInterval(() => {
         if (this._hass && this._config) this._render();
       }, 60000);
+      // the marker size depends on the card's rendered width, so recompute it
+      // whenever the card is resized (column changes, sidebar toggle, rotation)
+      if (typeof ResizeObserver === 'function') {
+        this._ro = new ResizeObserver(() => normalizeSunMarkers(this.shadowRoot));
+        this._ro.observe(this);
+      }
       if (this._hass && this._config) this._render();
     }
 
     disconnectedCallback() {
       clearInterval(this._timer);
+      this._ro?.disconnect();
     }
 
     _signature() {
@@ -332,6 +376,7 @@
           );
         });
       });
+      normalizeSunMarkers(this.shadowRoot);
     }
 
     _pal() {
@@ -349,11 +394,16 @@
       return `<ha-card style="display:flex; flex-direction:column; box-sizing:border-box; height:100%; padding:24px 26px 22px; color:${C.text}; font-family:${SANS};">${inner}</ha-card>`;
     }
 
+    /* Header row: an optional title on the left, always the meta on the right.
+       With no `name` set there is no title, so the meta slides left and carries
+       the row on its own rather than floating against an empty gutter. */
     _header(left, right, rightColor) {
       const C = this._pal();
+      const meta = `<div style="font-family:${MONO}; font-size:11px; color:${rightColor || C.faint}; white-space:nowrap;">${right}</div>`;
+      if (!left) return `<div style="display:flex; align-items:baseline;">${meta}</div>`;
       return `<div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px;">
         <div style="font-family:${MONO}; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:${C.dim}; white-space:nowrap;">${esc(left)}</div>
-        <div style="font-family:${MONO}; font-size:11px; color:${rightColor || C.faint}; white-space:nowrap;">${right}</div>
+        ${meta}
       </div>`;
     }
 
@@ -375,7 +425,7 @@
   /* ══ Card 1 · sun-cards-bearing — heading-up compass ═════════════════ */
   class SunCardsBearing extends SunCardsBase {
     static defaults = {
-      name: 'Sun bearing',
+      name: '', // no title unless one is configured
       heading: 325,
       walls: [
         { name: 'NW wall', bearing: 325 },
@@ -469,8 +519,7 @@
             <line x1="${t1x}" y1="${t1y}" x2="${t2x}" y2="${t2y}" stroke="${C.line}" stroke-opacity="0.35" stroke-width="1.5"></line>
             ${letter(0, 'N', C.ink)}${letter(90, 'E', C.faint)}${letter(180, 'S', C.faint)}${letter(270, 'W', C.faint)}
             ${arcs}
-            <circle cx="${sx}" cy="${sy}" r="11" fill="none" stroke="${C.orange}" stroke-width="1" stroke-dasharray="2.5 3" opacity="${(C.sunRing * sunDim).toFixed(2)}"></circle>
-            <circle cx="${sx}" cy="${sy}" r="5.5" fill="${C.orange}" opacity="${(C.sunFill * sunDim).toFixed(2)}"></circle>
+            ${sunMarker(sx, sy, C.orange, C, { dim: sunDim })}
             <text x="120" y="116" text-anchor="middle" fill="${C.text}" font-family="${SANS_SVG}" font-weight="600" font-size="40">${Math.round(az)}°</text>
             <text x="120" y="140" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="13">sun · ${cardinal16(az)}</text>
           </svg>
@@ -484,7 +533,7 @@
   /* ══ Card 2 · sun-cards-elevation — 24h elevation curve ══════════════ */
   class SunCardsElevation extends SunCardsBase {
     static defaults = {
-      name: 'Sun elevation',
+      name: '',
       sun_entity: 'sun.sun',
       load_fonts: true,
     };
@@ -543,7 +592,7 @@
           <div style="font-size:58px; font-weight:600; line-height:1; color:${C.text}; letter-spacing:-0.02em;">${fmtSigned(el)}</div>
         </div>
         <div style="font-family:${MONO}; font-size:11px; color:${statusColor}; padding-bottom:14px;">${status}</div>
-        <div style="margin:auto 0;">
+        <div style="margin:auto 0; position:relative;">
         <svg width="100%" height="96" viewBox="0 0 280 98" preserveAspectRatio="none" style="display:block; overflow:visible;" role="img" aria-label="Sun elevation today">
           <defs>
             <linearGradient id="sc-el-g" x1="0" y1="0" x2="0" y2="1">
@@ -556,14 +605,20 @@
           <path d="${dayFill}" fill="url(#sc-el-g)"></path>
           <path d="${fullCurve}" fill="none" stroke="${C.line}" stroke-opacity="0.28" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
           <path d="${dayStroke}" fill="none" stroke="${C.orange}" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
-          <circle cx="${nx}" cy="${ny}" r="4" fill="${C.blue}"></circle>
-          <circle cx="${nx}" cy="${ny}" r="8" fill="none" stroke="${C.blue}" stroke-width="1" opacity="0.4"></circle>
           <text x="2" y="92" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">12AM</text>
           <text x="70" y="92" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">6AM</text>
           <text x="140" y="92" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">12PM</text>
           <text x="210" y="92" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">6PM</text>
           <text x="278" y="92" text-anchor="end" fill="${C.faint}" font-family="${MONO_SVG}" font-size="9">12AM</text>
         </svg>
+        <!-- the chart above is stretched to fill the card (preserveAspectRatio=none),
+             which would squash the marker into an ellipse — so it is overlaid in an
+             unscaled SVG instead, and stays a true circle at any card width -->
+        <div style="position:absolute; left:${((nx / 280) * 100).toFixed(2)}%; top:${((ny * 96) / 98).toFixed(1)}px; transform:translate(-50%,-50%); pointer-events:none;">
+          <svg width="${SUN.ring * 2 + 4}" height="${SUN.ring * 2 + 4}" viewBox="${-SUN.ring - 2} ${-SUN.ring - 2} ${SUN.ring * 2 + 4} ${SUN.ring * 2 + 4}" style="display:block; overflow:visible;" aria-hidden="true">
+            ${sunMarker(0, 0, C.blue, C)}
+          </svg>
+        </div>
         </div>
         <div style="display:flex; justify-content:space-between; padding-top:14px; border-top:1px solid ${C.divider}; margin-top:12px;">
           <div style="display:flex; flex-direction:column; gap:3px;">
@@ -583,7 +638,7 @@
   /* ══ Card 3 · sun-cards-path — elevation vs azimuth, heading-up ══════ */
   class SunCardsPath extends SunCardsBase {
     static defaults = {
-      name: 'Sun path',
+      name: '',
       heading: 325,
       walls: [
         { name: 'NW wall', bearing: 325 },
@@ -726,8 +781,7 @@
           <text x="${bx(90).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">E</text>
           <text x="${bx(180).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">S</text>
           <text x="${bx(270).toFixed(1)}" y="124" text-anchor="middle" fill="${C.faint}" font-family="${MONO_SVG}" font-size="10">W</text>
-          <circle cx="${sunX}" cy="${sunY}" r="4.5" fill="${C.blue}" opacity="0.85"></circle>
-          <circle cx="${sunX}" cy="${sunY}" r="8" fill="none" stroke="${C.blue}" stroke-width="1" stroke-dasharray="2.5 3" opacity="0.45"></circle>
+          ${sunMarker(sunX, sunY, C.blue, C)}
           <text x="298" y="166" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="9" letter-spacing="1">AZIMUTH → · HEADING-UP ${heading}°</text>
         </svg>
         </div>

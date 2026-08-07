@@ -34,7 +34,7 @@ HACS registers the resource automatically. For manual installs, copy `sun-cards.
 
 | Option | Default | Description |
 |---|---|---|
-| `name` | per card | Header label |
+| `name` | — | Optional title in the card header. Omitted by default, since the cards read clearly on their own and a title usually just repeats the section heading above them |
 | `sun_entity` | `sun.sun` | Source for live azimuth/elevation attributes and `next_rising`/`next_setting` |
 | `azimuth_entity` | — | Optional sensor overriding azimuth (e.g. `sensor.sun_azimuth`) |
 | `elevation_entity` | — | Optional sensor overriding elevation (e.g. `sensor.sun_elevation`) |
@@ -45,6 +45,11 @@ In sections-layout dashboards all three cards default to the **same height** (6 
 they line up side by side; the internals absorb any slack (the compass centers itself, charts
 float, footers pin to the bottom). Resize any card via its layout options (`grid_options:
 rows`) if you want a different height.
+
+The sun marker — a dot inside a dashed ring, with a knockout halo so it stays legible over
+wall arcs and the day curve — is drawn at the same on-screen size in every card, at any card
+width. Its color differs by card (amber on the compass, blue on the two charts) so it always
+contrasts with the artwork underneath it.
 
 ### `walls` (bearing + path cards)
 
