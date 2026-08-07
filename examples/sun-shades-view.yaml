@@ -15,11 +15,9 @@ sections:
         walls:
           - name: NW wall
             bearing: 325
-            color: "#f2a35c"
             entity: cover.dining_room_somfyrts_living_room_shade
           - name: SW wall
             bearing: 236
-            color: "#8fa8d9"
             entity: cover.deck_door
         wall_arc: 60
         sun_window: 78
@@ -40,9 +38,7 @@ sections:
         walls:
           - name: NW wall
             bearing: 325
-            color: "#f2a35c"
           - name: SW wall
             bearing: 236
-            color: "#8fa8d9"
         azimuth_entity: sensor.sun_azimuth
         elevation_entity: sensor.sun_elevation

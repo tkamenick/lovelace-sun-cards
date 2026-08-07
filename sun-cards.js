@@ -1,4 +1,4 @@
-/*! Sun Cards — "Observatory" Lovelace card set for Home Assistant
+/*! Sun Cards — a Lovelace card set for Home Assistant
  *  https://github.com/tkamenick/lovelace-sun-cards
  *
  *  Three cards:
@@ -12,46 +12,43 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
-  /* ── palettes ───────────────────────────────────────────────────────────
-   *  theme (default): surfaces + neutral text from the active HA theme, with
-   *  the original Observatory values as fallbacks. observatory: the design's
-   *  self-contained dark look (use_theme_colors: false).                    */
-  const ORANGE = '#f2a35c';
-  const BLUE = '#8fa8d9';
-  const PALETTES = {
-    observatory: {
-      text: '#e8e6e1',
-      ink: '#c9c7c2',
-      dim: '#8b8d96',
-      faint: '#565963',
-      ghost: '#3a3d46',
-      line: '#ffffff',
-      divider: 'rgba(255,255,255,0.06)',
-      orange: ORANGE,
-      blue: BLUE,
-    },
-    theme: {
-      text: 'var(--primary-text-color, #e8e6e1)',
-      ink: 'var(--primary-text-color, #c9c7c2)',
-      dim: 'var(--secondary-text-color, #8b8d96)',
-      faint: 'var(--disabled-text-color, #565963)',
-      ghost: 'var(--disabled-text-color, #3a3d46)',
-      line: 'var(--primary-text-color, #ffffff)',
-      divider: 'var(--divider-color, rgba(255,255,255,0.06))',
-      orange: ORANGE,
-      blue: BLUE,
-    },
+  /* ── palette ────────────────────────────────────────────────────────────
+   *  Surfaces and neutral text come from the active HA theme. The data
+   *  accents are picked per theme brightness: the light-theme variants are
+   *  deeper so they still clear WCAG AA text contrast on a pale card.      */
+  const ACCENTS = {
+    dark: { amber: '#f2a35c', blue: '#8fa8d9', green: '#a8d98f', pink: '#d98fa8' },
+    light: { amber: '#a8620f', blue: '#4f74ad', green: '#4a7a30', pink: '#a33c62' },
   };
-  const OBS_CARD =
-    'border-radius:22px; background:linear-gradient(180deg,#16171d,#101116); border:1px solid rgba(255,255,255,0.07); box-shadow:none;';
+  const NEUTRALS = {
+    text: 'var(--primary-text-color, #e8e6e1)',
+    ink: 'var(--primary-text-color, #c9c7c2)',
+    dim: 'var(--secondary-text-color, #8b8d96)',
+    faint: 'var(--disabled-text-color, #565963)',
+    ghost: 'var(--disabled-text-color, #3a3d46)',
+    line: 'var(--primary-text-color, #ffffff)',
+    divider: 'var(--divider-color, rgba(255,255,255,0.06))',
+  };
+  const palette = (darkMode) => {
+    const a = darkMode ? ACCENTS.dark : ACCENTS.light;
+    return {
+      ...NEUTRALS,
+      ...a,
+      orange: a.amber,
+      wall: [a.amber, a.blue, a.green, a.pink],
+      // the light accents are darker but lower-chroma, so they need more
+      // opacity than the dark ones to read with the same weight
+      sunFill: darkMode ? 0.6 : 0.9,
+      sunRing: darkMode ? 0.7 : 0.9,
+    };
+  };
   const MONO = "'Fragment Mono',ui-monospace,SFMono-Regular,Menlo,monospace";
   const SANS = "'Familjen Grotesk','Instrument Sans',system-ui,-apple-system,sans-serif";
   const MONO_SVG = 'Fragment Mono, ui-monospace, Menlo, monospace';
   const SANS_SVG = 'Familjen Grotesk, system-ui, sans-serif';
-  const WALL_COLORS = [ORANGE, BLUE, '#a8d98f', '#d98fa8'];
 
   const FONTS_URL =
     'https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Fragment+Mono&display=swap';
@@ -210,7 +207,8 @@
           return {
             name: w.name || `Wall ${i + 1}`,
             bearing: norm360(w.bearing),
-            color: w.color || WALL_COLORS[i % WALL_COLORS.length],
+            color: w.color || null, // null → follows the theme accent for this slot
+            slot: i,
             entity: w.entity || null,
           };
         });
@@ -258,6 +256,7 @@
         el.toFixed(1),
         c.weather_entity ? st[c.weather_entity]?.state : '',
         c.bypass_entity ? st[c.bypass_entity]?.state : '',
+        this._hass.themes?.darkMode, // re-render when the theme flips light/dark
         new Date().getDate(),
       ].join('|');
     }
@@ -336,13 +335,18 @@
     }
 
     _pal() {
-      return this._config?.use_theme_colors === false ? PALETTES.observatory : PALETTES.theme;
+      return palette(this._hass?.themes?.darkMode !== false);
+    }
+
+    /* wall color: explicit config wins, otherwise the theme accent for its slot */
+    _wallColor(w) {
+      const C = this._pal();
+      return w.color || C.wall[w.slot % C.wall.length];
     }
 
     _card(inner) {
       const C = this._pal();
-      const skin = this._config?.use_theme_colors === false ? ` ${OBS_CARD}` : '';
-      return `<ha-card style="display:flex; flex-direction:column; box-sizing:border-box; height:100%; padding:24px 26px 22px;${skin} color:${C.text}; font-family:${SANS};">${inner}</ha-card>`;
+      return `<ha-card style="display:flex; flex-direction:column; box-sizing:border-box; height:100%; padding:24px 26px 22px; color:${C.text}; font-family:${SANS};">${inner}</ha-card>`;
     }
 
     _header(left, right, rightColor) {
@@ -374,15 +378,14 @@
       name: 'Sun bearing',
       heading: 325,
       walls: [
-        { name: 'NW wall', bearing: 325, color: ORANGE },
-        { name: 'SW wall', bearing: 236, color: BLUE },
+        { name: 'NW wall', bearing: 325 },
+        { name: 'SW wall', bearing: 236 },
       ],
       wall_arc: 60, // drawn arc width (visual)
       sun_window: 78, // half-angle for sun-on-glass windows
       min_elevation: 3,
       sun_entity: 'sun.sun',
       sunny_conditions: ['sunny', 'partlycloudy'],
-      use_theme_colors: true,
       load_fonts: true,
     };
     static cardSize = 7;
@@ -418,21 +421,22 @@
       const arcs = walls
         .map(
           (w) =>
-            `<path d="${arc(w.bearing, c.wall_arc)}" fill="none" stroke="${w.color}" stroke-width="3.5" stroke-linecap="round" opacity="0.85"></path>`
+            `<path d="${arc(w.bearing, c.wall_arc)}" fill="none" stroke="${this._wallColor(w)}" stroke-width="3.5" stroke-linecap="round" opacity="0.85"></path>`
         )
         .join('');
 
       const rows = walls
         .map((w) => {
+          const wc = this._wallColor(w);
           const wins = glassWindows(tb.pts, w.bearing, c.sun_window, c.min_elevation);
           const times = wins.length
             ? 'sun ' + wins.slice(0, 2).map((win) => fmtRange(hass, win.start, win.end)).join(' · ')
             : 'no direct sun';
           const active = el > c.min_elevation && angDiff(az, w.bearing) <= c.sun_window;
-          const dotGlow = active ? ` box-shadow:0 0 7px 1px ${w.color};` : '';
+          const dotGlow = active ? ` box-shadow:0 0 7px 1px ${wc};` : '';
           const click = w.entity ? ` data-entity="${esc(w.entity)}" role="button"` : '';
           return `<div${click} style="display:flex; justify-content:space-between; align-items:center; gap:10px;${w.entity ? ' cursor:pointer;' : ''}">
-            <span style="display:flex; align-items:center; gap:8px; font-family:${MONO}; font-size:11px; color:${C.ink}; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:99px; background:${w.color};${dotGlow}"></span>${esc(w.name)} · ${Math.round(w.bearing)}°</span>
+            <span style="display:flex; align-items:center; gap:8px; font-family:${MONO}; font-size:11px; color:${C.ink}; white-space:nowrap;"><span style="width:8px; height:8px; border-radius:99px; background:${wc};${dotGlow}"></span>${esc(w.name)} · ${Math.round(w.bearing)}°</span>
             <span style="font-family:${MONO}; font-size:11px; color:${C.dim}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${times}</span>
           </div>`;
         })
@@ -465,8 +469,8 @@
             <line x1="${t1x}" y1="${t1y}" x2="${t2x}" y2="${t2y}" stroke="${C.line}" stroke-opacity="0.35" stroke-width="1.5"></line>
             ${letter(0, 'N', C.ink)}${letter(90, 'E', C.faint)}${letter(180, 'S', C.faint)}${letter(270, 'W', C.faint)}
             ${arcs}
-            <circle cx="${sx}" cy="${sy}" r="11" fill="none" stroke="${C.orange}" stroke-width="1" stroke-dasharray="2.5 3" opacity="${(0.7 * sunDim).toFixed(2)}"></circle>
-            <circle cx="${sx}" cy="${sy}" r="5.5" fill="${C.orange}" opacity="${(0.6 * sunDim).toFixed(2)}"></circle>
+            <circle cx="${sx}" cy="${sy}" r="11" fill="none" stroke="${C.orange}" stroke-width="1" stroke-dasharray="2.5 3" opacity="${(C.sunRing * sunDim).toFixed(2)}"></circle>
+            <circle cx="${sx}" cy="${sy}" r="5.5" fill="${C.orange}" opacity="${(C.sunFill * sunDim).toFixed(2)}"></circle>
             <text x="120" y="116" text-anchor="middle" fill="${C.text}" font-family="${SANS_SVG}" font-weight="600" font-size="40">${Math.round(az)}°</text>
             <text x="120" y="140" text-anchor="middle" fill="${C.dim}" font-family="${MONO_SVG}" font-size="13">sun · ${cardinal16(az)}</text>
           </svg>
@@ -482,7 +486,6 @@
     static defaults = {
       name: 'Sun elevation',
       sun_entity: 'sun.sun',
-      use_theme_colors: true,
       load_fonts: true,
     };
     static cardSize = 6;
@@ -583,12 +586,11 @@
       name: 'Sun path',
       heading: 325,
       walls: [
-        { name: 'NW wall', bearing: 325, color: ORANGE },
-        { name: 'SW wall', bearing: 236, color: BLUE },
+        { name: 'NW wall', bearing: 325 },
+        { name: 'SW wall', bearing: 236 },
       ],
       wall_arc: 60,
       sun_entity: 'sun.sun',
-      use_theme_colors: true,
       load_fonts: true,
     };
     static cardSize = 6;
@@ -653,6 +655,7 @@
       const bandW = (c.wall_arc * 300) / 360;
       const bands = walls
         .map((w) => {
+          const wc = this._wallColor(w);
           const cx = bx(w.bearing);
           const L = cx - bandW / 2;
           const R = cx + bandW / 2;
@@ -662,7 +665,7 @@
             r = Math.min(300, r);
             if (r > l)
               rects.push(
-                `<rect x="${l.toFixed(1)}" y="14" width="${(r - l).toFixed(1)}" height="96" fill="${w.color}" opacity="0.08"></rect>`
+                `<rect x="${l.toFixed(1)}" y="14" width="${(r - l).toFixed(1)}" height="96" fill="${wc}" opacity="0.08"></rect>`
               );
           };
           add(L, R);
@@ -671,7 +674,7 @@
           const short = esc(String(w.name || '').split(/\s+/)[0].toUpperCase());
           return (
             rects.join('') +
-            `<text x="${cx.toFixed(1)}" y="105" text-anchor="middle" fill="${w.color}" font-family="${MONO_SVG}" font-size="9" opacity="0.85">${short} ${Math.round(w.bearing)}°</text>`
+            `<text x="${cx.toFixed(1)}" y="105" text-anchor="middle" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.85">${short} ${Math.round(w.bearing)}°</text>`
           );
         })
         .join('');
@@ -769,7 +772,7 @@
   window.__SUN_CARDS__ = { VERSION, solarPos, buildDayTable, glassWindows };
 
   console.info(
-    `%c SUN-CARDS %c v${VERSION} · Observatory `,
+    `%c SUN-CARDS %c v${VERSION} `,
     'background:#f2a35c;color:#131318;border-radius:4px 0 0 4px;padding:2px 6px;font-weight:600;',
     'background:#16171d;color:#f2a35c;border-radius:0 4px 4px 0;padding:2px 6px;'
   );

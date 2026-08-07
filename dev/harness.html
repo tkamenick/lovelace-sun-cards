@@ -9,14 +9,23 @@
   .row { display:flex; gap:20px; align-items:stretch; flex-wrap:wrap; }
   .col { width:340px; display:flex; }
   .col > * { flex:1; }
-  /* simulate HA default dark theme on the themed row */
-  #themed {
-    --card-background-color: #1c1c1c;
+  /* HA default dark theme */
+  #dark {
     --ha-card-background: #1c1c1c;
     --primary-text-color: #e1e1e1;
     --secondary-text-color: #9b9b9b;
     --disabled-text-color: #6f6f6f;
     --divider-color: rgba(225,225,225,0.12);
+    --ha-card-border-radius: 12px;
+  }
+  /* HA default light theme (row sits on its own light backdrop) */
+  #light-wrap { background:#f2f4f7; padding:24px; border-radius:14px; }
+  #light {
+    --ha-card-background: #ffffff;
+    --primary-text-color: #212121;
+    --secondary-text-color: #727272;
+    --disabled-text-color: #bdbdbd;
+    --divider-color: rgba(0,0,0,0.12);
     --ha-card-border-radius: 12px;
   }
 </style>
@@ -50,10 +59,10 @@ customElements.define('ha-card', class extends HTMLElement {
 </script>
 </head>
 <body>
-<h2 id="themed-label">Themed (simulated HA default dark)</h2>
-<div class="row" id="themed"></div>
-<h2>Observatory (use_theme_colors: false)</h2>
-<div class="row" id="obs"></div>
+<h2>HA default dark theme</h2>
+<div class="row" id="dark"></div>
+<h2>HA default light theme</h2>
+<div id="light-wrap"><div class="row" id="light"></div></div>
 <script>
 const LAT = 43.0804, LON = -88.3415;
 const M = window.__SUN_CARDS__;
@@ -65,9 +74,10 @@ const p = M.solarPos(now, LAT, LON);
 const nr = tb.rise && tb.rise > now ? tb.rise : new Date(tb.rise.getTime() + 864e5);
 const ns = tb.set && tb.set > now ? tb.set : new Date(tb.set.getTime() + 864e5);
 
-const mkHass = (wx) => ({
+const mkHass = (wx, darkMode = true) => ({
   config: { latitude: LAT, longitude: LON, time_zone: 'America/Chicago' },
   locale: { language: 'en', time_format: 'am_pm' },
+  themes: { darkMode },
   states: {
     'sun.sun': {
       state: p.el > 0 ? 'above_horizon' : 'below_horizon',
@@ -81,8 +91,8 @@ const mkHass = (wx) => ({
 });
 
 const WALLS = [
-  { name: 'NW wall', bearing: 325, color: '#f2a35c', entity: 'cover.dining_room_somfyrts_living_room_shade' },
-  { name: 'SW wall', bearing: 236, color: '#8fa8d9', entity: 'cover.deck_door' },
+  { name: 'NW wall', bearing: 325, entity: 'cover.dining_room_somfyrts_living_room_shade' },
+  { name: 'SW wall', bearing: 236, entity: 'cover.deck_door' },
 ];
 
 function addCards(rowId, hass, extraCfg = {}) {
@@ -103,17 +113,20 @@ function addCards(rowId, hass, extraCfg = {}) {
   }
 }
 
-addCards('themed', mkHass('sunny'));
-addCards('obs', mkHass('partlycloudy'), { use_theme_colors: false });
+addCards('dark', mkHass('sunny', true));
+addCards('light', mkHass('sunny', false));
 
 console.log('STATE', { az: p.az.toFixed(1), el: p.el.toFixed(1),
   rise: tb.rise?.toLocaleTimeString(), set: tb.set?.toLocaleTimeString() });
 
-// &row=themed / &row=obs — show a single row (used for README screenshots)
+// &row=dark / &row=light — show a single row (used for README screenshots)
 const only = (/[?&]row=(\w+)/.exec(location.search) || [])[1];
 if (only) {
   document.querySelectorAll('h2').forEach((h) => h.remove());
-  for (const id of ['themed', 'obs']) if (id !== only) document.getElementById(id).remove();
+  const drop = only === 'dark' ? 'light-wrap' : 'dark';
+  document.getElementById(drop).remove();
+  if (only === 'light') document.body.style.background = '#f2f4f7';
+  document.getElementById('light-wrap')?.style.setProperty('padding', '0');
 }
 </script>
 </body>

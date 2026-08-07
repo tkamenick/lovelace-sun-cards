@@ -1,15 +1,14 @@
-# Sun Cards · Observatory
+# Sun Cards
 
 Three custom Lovelace cards for Home Assistant that show where the sun is relative to your
-house — a compass, an elevation chart, and a sun-path chart, drawn in a shared
-"observatory" style.
+house — a compass, an elevation chart, and a sun-path chart, drawn in one shared style.
 
-![Sun Cards blending with the Home Assistant theme](docs/sun-cards-theme.png)
+![Sun Cards on a dark Home Assistant theme](docs/sun-cards-dark.png)
 
-By default the cards blend with your active HA theme. Prefer a self-contained dark look
-instead? Set `use_theme_colors: false`:
+The cards take their surface, borders, and text colors from your active theme, and shift the
+amber/blue data accents to deeper variants on light themes so everything stays readable:
 
-![Sun Cards in the standalone Observatory style](docs/sun-cards-observatory.png)
+![Sun Cards on a light Home Assistant theme](docs/sun-cards-light.png)
 
 | Card | Type | What it shows |
 |---|---|---|
@@ -26,7 +25,7 @@ latitude/longitude (NOAA solar algorithm, ±2 min / ±0.3°). The *live* sun pos
 
 1. HACS → three-dot menu → **Custom repositories**
 2. Repository: `https://github.com/tkamenick/lovelace-sun-cards` · Type: **Dashboard**
-3. Install **Sun Cards (Observatory)**, then reload your browser when prompted.
+3. Install **Sun Cards**, then reload your browser when prompted.
 
 HACS registers the resource automatically. For manual installs, copy `sun-cards.js` to
 `/config/www/` and add it as a dashboard resource (`/local/sun-cards.js`, JavaScript module).
@@ -40,8 +39,7 @@ HACS registers the resource automatically. For manual installs, copy `sun-cards.
 | `azimuth_entity` | — | Optional sensor overriding azimuth (e.g. `sensor.sun_azimuth`) |
 | `elevation_entity` | — | Optional sensor overriding elevation (e.g. `sensor.sun_elevation`) |
 | `latitude` / `longitude` | HA location | Override the coordinates used for the day curves |
-| `use_theme_colors` | `true` | Card surface, borders, and neutral text come from the active HA theme (works on light and dark themes); the amber/blue data accents stay. Set `false` for the self-contained Observatory look (dark gradient, 22px radius) |
-| `load_fonts` | `true` | Load the design's Google Fonts (Familjen Grotesk / Fragment Mono). Set `false` for fully offline dashboards — falls back to system fonts |
+| `load_fonts` | `true` | Load the card fonts (Familjen Grotesk / Fragment Mono) from Google Fonts. Set `false` for fully offline dashboards — falls back to system fonts |
 
 In sections-layout dashboards all three cards default to the **same height** (6 grid rows) so
 they line up side by side; the internals absorb any slack (the compass centers itself, charts
@@ -54,9 +52,12 @@ rows`) if you want a different height.
 walls:
   - name: NW wall        # row label; first word is used on the path-card band
     bearing: 325         # wall-normal compass bearing, degrees
-    color: "#f2a35c"     # optional, cycles orange/blue/... by default
     entity: cover.x      # optional — makes the wall row open this entity's more-info
+    color: "#a8620f"     # optional — omit to follow the theme accent for this slot
 ```
+
+Leave `color` out unless you want a specific hue: by default each wall takes the next theme
+accent (amber, blue, green, pink), which keeps it readable on both light and dark themes.
 
 | Option | Default | Description |
 |---|---|---|
@@ -84,9 +85,10 @@ view (one card per column) wired to real entities.
 
 ## Development
 
-`dev/harness.html` renders all three cards against a mock `hass` object — serve the repo root
-(`python3 -m http.server`) and open `/dev/harness.html`. Add `?t=HHMM` to stage the clock
-(e.g. `?t=1730` for golden hour).
+`dev/harness.html` renders all three cards against a mock `hass` object, on both a light and a
+dark theme — serve the repo root (`python3 -m http.server`) and open `/dev/harness.html`.
+Add `?t=HHMM` to stage the clock (e.g. `?t=1730` for golden hour) and `&row=dark|light` to
+isolate one theme.
 
 ## License
 
