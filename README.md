@@ -67,21 +67,33 @@ accent (amber, blue, green, pink), which keeps it readable on both light and dar
 | Option | Default | Description |
 |---|---|---|
 | `heading` | `325` | Compass bearing rendered "up" on the bearing compass and path chart |
-| `wall_arc` | `60` | **Drawn** arc/band width in degrees (visual only) |
+
+### Sun-on-glass rule (bearing + path cards)
+
+| Option | Default | Description |
+|---|---|---|
+| `sun_window` | `78` | Half-angle: sun is "on the glass" when its azimuth is within ±this of the wall bearing… |
+| `min_elevation` | `3` | …and elevation is above this |
+
+These two options define when a wall counts as lit, and everything about a wall is derived
+from them: the per-wall times, the glowing dot, the compass arc, and the path-chart band.
+They intentionally mirror the `fov` / `min_elevation` inputs of a sun-glare shade automation,
+so the card and the automation agree about when the sun is on a given window.
+
+A wall is drawn as **the stretch of sky the sun actually crosses while lighting it today** —
+not the window's full ±78° acceptance cone. That distinction matters: the sun only ever
+traverses part of the cone, and which part shifts through the year. Drawing the cone would put
+a band where the sun never travels in the current season, making it look as though the sun set
+before it ever reached those windows. A faint tick on the compass still marks each wall's
+bearing, so its orientation reads even on a day it gets no sun at all.
 
 ### Bearing card only
 
 | Option | Default | Description |
 |---|---|---|
-| `sun_window` | `78` | Half-angle: sun is "on the glass" when its azimuth is within ±this of the wall bearing… |
-| `min_elevation` | `3` | …and elevation is above this. Drives the per-wall time windows and the glowing dot |
 | `weather_entity` | — | Weather entity for the gate row (e.g. `weather.kues`) |
 | `bypass_entity` | — | `input_boolean`; when `on` the row shows **gate bypassed** |
-| `sunny_conditions` | `[sunny, partlycloudy]` | Conditions that count as "gate open"; anything else shows **cloud hold** |
-
-Note that `wall_arc` (what is drawn) is deliberately separate from `sun_window`/`min_elevation`
-(what is computed): ±78° is nearly a full half-circle and would swamp the chart, so the drawn
-arcs stay at a readable 60° while the time windows use the real automation rule.
+| `sunny_conditions` | `[sunny, partlycloudy, windy]` | Conditions that count as "gate open"; anything else shows **cloud hold** |
 
 ## Example: 3-column sections view
 

@@ -19,7 +19,7 @@ sections:
           - name: SW wall
             bearing: 236
             entity: cover.deck_door
-        wall_arc: 60
+        # keep these matched to the shade automation's fov / min_elevation
         sun_window: 78
         min_elevation: 3
         azimuth_entity: sensor.sun_azimuth
@@ -40,5 +40,7 @@ sections:
             bearing: 325
           - name: SW wall
             bearing: 236
+        sun_window: 78
+        min_elevation: 3
         azimuth_entity: sensor.sun_azimuth
         elevation_entity: sensor.sun_elevation

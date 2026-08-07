@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -431,11 +431,10 @@
         { name: 'NW wall', bearing: 325 },
         { name: 'SW wall', bearing: 236 },
       ],
-      wall_arc: 60, // drawn arc width (visual)
       sun_window: 78, // half-angle for sun-on-glass windows
       min_elevation: 3,
       sun_entity: 'sun.sun',
-      sunny_conditions: ['sunny', 'partlycloudy'],
+      sunny_conditions: ['sunny', 'partlycloudy', 'windy'],
       load_fonts: true,
     };
     static cardSize = 7;
@@ -453,10 +452,14 @@
         const a = (azm - heading) * RAD;
         return [(120 + r * Math.sin(a)).toFixed(1), (120 - r * Math.cos(a)).toFixed(1)];
       };
-      const arc = (b, w) => {
-        const [x1, y1] = pt(b - w / 2, 88);
-        const [x2, y2] = pt(b + w / 2, 88);
-        return `M ${x1} ${y1} A 88 88 0 ${w > 180 ? 1 : 0} 1 ${x2} ${y2}`;
+      // arc along the horizon ring between two azimuths, following the sun's
+      // own direction of travel (increasing azimuth = clockwise on screen)
+      const arcBetween = (az1, az2, r) => {
+        const span = norm360(az2 - az1);
+        if (span < 0.5) return '';
+        const [x1, y1] = pt(az1, r);
+        const [x2, y2] = pt(az2, r);
+        return `M ${x1} ${y1} A ${r} ${r} 0 ${span > 180 ? 1 : 0} 1 ${x2} ${y2}`;
       };
       const letter = (azm, label, color) => {
         const [x, y] = pt(azm, 105);
@@ -468,17 +471,47 @@
       const [sx, sy] = pt(az, 88);
       const sunDim = el > 0 ? 1 : 0.55;
 
-      const arcs = walls
-        .map(
-          (w) =>
-            `<path d="${arc(w.bearing, c.wall_arc)}" fill="none" stroke="${this._wallColor(w)}" stroke-width="3.5" stroke-linecap="round" opacity="0.85"></path>`
-        )
+      /* Each wall is drawn as the stretch of horizon the sun actually crosses
+         while lighting that glass today — not the window's full acceptance
+         cone. The cone is ±sun_window wide (±78° by default), but the sun only
+         ever traverses part of it, and which part shifts through the seasons.
+         Drawing the cone put the NW band where the sun never goes in summer,
+         making it look as though the sun set before reaching those windows. */
+      const lit = walls.map((w) => ({
+        w,
+        color: this._wallColor(w),
+        wins: glassWindows(tb.pts, w.bearing, c.sun_window, c.min_elevation).map((win) => ({
+          ...win,
+          azStart: solarPos(win.start, ...this._latlon()).az,
+          azEnd: solarPos(win.end, ...this._latlon()).az,
+        })),
+      }));
+
+      const arcs = lit
+        .map(({ w, color, wins }) => {
+          // Walls whose lit ranges overlap (they usually do — one wall's sun
+          // window often contains another's) would hide each other at a shared
+          // radius, so each wall gets its own ring.
+          const arcR = 88 - w.slot * 7;
+          // faint tick at the wall bearing so its orientation still reads on a
+          // day the sun never reaches it (winter, or a north-facing wall)
+          const [b1x, b1y] = pt(w.bearing, arcR - 5);
+          const [b2x, b2y] = pt(w.bearing, arcR + 5);
+          const tick = `<line x1="${b1x}" y1="${b1y}" x2="${b2x}" y2="${b2y}" stroke="${color}" stroke-width="1.5" opacity="0.4"></line>`;
+          const bands = wins
+            .map((win) => {
+              const d = arcBetween(win.azStart, win.azEnd, arcR);
+              return d
+                ? `<path d="${d}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round" opacity="0.85"></path>`
+                : '';
+            })
+            .join('');
+          return tick + bands;
+        })
         .join('');
 
-      const rows = walls
-        .map((w) => {
-          const wc = this._wallColor(w);
-          const wins = glassWindows(tb.pts, w.bearing, c.sun_window, c.min_elevation);
+      const rows = lit
+        .map(({ w, color: wc, wins }) => {
           const times = wins.length
             ? 'sun ' + wins.slice(0, 2).map((win) => fmtRange(hass, win.start, win.end)).join(' · ')
             : 'no direct sun';
@@ -644,7 +677,8 @@
         { name: 'NW wall', bearing: 325 },
         { name: 'SW wall', bearing: 236 },
       ],
-      wall_arc: 60,
+      sun_window: 78, // must match the bearing card / the automation's fov
+      min_elevation: 3,
       sun_entity: 'sun.sun',
       load_fonts: true,
     };
@@ -707,29 +741,43 @@
         flush();
       }
 
-      const bandW = (c.wall_arc * 300) / 360;
+      /* A wall's band covers the azimuths the sun crosses while actually
+         lighting that glass today (±sun_window AND above min_elevation) —
+         the same rule the shade automation runs on. Drawing the window's full
+         acceptance cone instead would place the band where the sun never
+         travels this time of year. */
       const bands = walls
         .map((w) => {
           const wc = this._wallColor(w);
-          const cx = bx(w.bearing);
-          const L = cx - bandW / 2;
-          const R = cx + bandW / 2;
           const rects = [];
           const add = (l, r) => {
             l = Math.max(0, l);
             r = Math.min(300, r);
             if (r > l)
               rects.push(
-                `<rect x="${l.toFixed(1)}" y="14" width="${(r - l).toFixed(1)}" height="96" fill="${wc}" opacity="0.08"></rect>`
+                `<rect x="${l.toFixed(1)}" y="14" width="${(r - l).toFixed(1)}" height="96" fill="${wc}" opacity="0.10"></rect>`
               );
           };
-          add(L, R);
-          if (L < 0) add(L + 300, R + 300);
-          if (R > 300) add(L - 300, R - 300);
+          const wins = glassWindows(tb.pts, w.bearing, c.sun_window, c.min_elevation);
+          let labelX = bx(w.bearing);
+          wins.forEach((win, i) => {
+            const x1 = bx(solarPos(win.start, lat, lon).az);
+            const x2 = bx(solarPos(win.end, lat, lon).az);
+            if (x2 >= x1) add(x1, x2);
+            else {
+              // the lit stretch runs off one edge of the heading-up axis
+              add(x1, 300);
+              add(0, x2);
+            }
+            if (i === 0) labelX = x1;
+          });
           const short = esc(String(w.name || '').split(/\s+/)[0].toUpperCase());
+          // anchored to each band's left edge, and stepped down per wall, so
+          // labels stay apart even when the bands themselves overlap heavily
+          const ly = 105 - w.slot * 10;
           return (
             rects.join('') +
-            `<text x="${cx.toFixed(1)}" y="105" text-anchor="middle" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.85">${short} ${Math.round(w.bearing)}°</text>`
+            `<text x="${Math.min(250, Math.max(2, labelX + 3)).toFixed(1)}" y="${ly}" text-anchor="start" fill="${wc}" font-family="${MONO_SVG}" font-size="9" opacity="0.85">${short} ${Math.round(w.bearing)}°</text>`
           );
         })
         .join('');
