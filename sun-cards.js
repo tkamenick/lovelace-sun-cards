@@ -12,7 +12,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.7.0';
+  const VERSION = '1.7.1';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -298,6 +298,7 @@
     disconnectedCallback() {
       clearInterval(this._timer);
       this._ro?.disconnect();
+      if (this._raf) cancelAnimationFrame(this._raf);
       if (this._onWinResize) window.removeEventListener('resize', this._onWinResize);
     }
 
@@ -386,8 +387,14 @@
           );
         });
       });
-      normalizeSunMarkers(this.shadowRoot);
-      this._afterRender();
+      // post-paint work must never escape: HA renders cards during its own
+      // view layout, and an exception here would blank the whole view
+      try {
+        normalizeSunMarkers(this.shadowRoot);
+        this._afterRender();
+      } catch (e) {
+        console.warn('sun-cards: post-render step failed', e);
+      }
     }
 
     /* Cards whose drawing depends on their own rendered size override this.
@@ -701,16 +708,28 @@
     static cardSize = 6;
 
     /* The chart's viewBox height is derived from the box this card actually
-       gets, so measure it after painting and re-render if it moved. */
+       gets, so measure after painting and re-render if it moved. The re-render
+       is deferred to the next frame rather than run inline: HA sizes cards
+       while laying the view out, so a synchronous re-render here re-enters the
+       layout it was called from. `_corr` caps the corrections in case a card
+       size and its content ever chase each other. */
     _afterRender() {
-      const el = this.shadowRoot.querySelector('[data-chart]');
+      const el = this.shadowRoot && this.shadowRoot.querySelector('[data-chart]');
       if (!el) return;
       const r = el.getBoundingClientRect();
       if (r.width < 60 || r.height < 60) return; // not laid out yet
       const b = this._box;
-      if (b && Math.abs(b.w - r.width) < 1.5 && Math.abs(b.h - r.height) < 1.5) return;
+      if (b && Math.abs(b.w - r.width) < 2 && Math.abs(b.h - r.height) < 2) {
+        this._corr = 0;
+        return;
+      }
+      if ((this._corr = (this._corr || 0) + 1) > 4) return;
       this._box = { w: r.width, h: r.height };
-      this._render();
+      if (this._raf) cancelAnimationFrame(this._raf);
+      this._raf = requestAnimationFrame(() => {
+        this._raf = 0;
+        if (this.isConnected && this._hass && this._config) this._render();
+      });
     }
 
     _template() {
