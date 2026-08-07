@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>sun-cards dev harness</title>
+<style>
+  body { margin:0; background:#131318; padding:36px; display:flex; flex-direction:column; gap:28px; font-family:monospace; }
+  h2 { color:#8b8d96; font:12px monospace; margin:0; letter-spacing:0.1em; text-transform:uppercase; }
+  .row { display:flex; gap:20px; align-items:stretch; flex-wrap:wrap; }
+  .col { width:340px; display:flex; }
+  .col > * { flex:1; }
+  /* simulate HA default dark theme on the themed row */
+  #themed {
+    --card-background-color: #1c1c1c;
+    --ha-card-background: #1c1c1c;
+    --primary-text-color: #e1e1e1;
+    --secondary-text-color: #9b9b9b;
+    --disabled-text-color: #6f6f6f;
+    --divider-color: rgba(225,225,225,0.12);
+    --ha-card-border-radius: 12px;
+  }
+</style>
+<script>
+// stage the clock with ?t=HHMM (e.g. ?t=1730) — must run before sun-cards.js loads
+(() => {
+  const m = /[?&]t=(\d{2})(\d{2})/.exec(location.search);
+  if (!m) return;
+  const R = Date;
+  const target = new R();
+  target.setHours(+m[1], +m[2], 0, 0);
+  const delta = target.getTime() - R.now();
+  window.Date = class extends R {
+    constructor(...a) { a.length ? super(...a) : super(R.now() + delta); }
+    static now() { return R.now() + delta; }
+  };
+})();
+</script>
+<script src="../sun-cards.js"></script>
+<script>
+// minimal ha-card shim: apply theme surface when the card doesn't self-style
+customElements.define('ha-card', class extends HTMLElement {
+  connectedCallback() {
+    if (!(this.getAttribute('style') || '').includes('background')) {
+      this.style.background = 'var(--ha-card-background, transparent)';
+      this.style.borderRadius = 'var(--ha-card-border-radius, 12px)';
+      this.style.border = '1px solid var(--divider-color, transparent)';
+    }
+  }
+});
+</script>
+</head>
+<body>
+<h2 id="themed-label">Themed (simulated HA default dark)</h2>
+<div class="row" id="themed"></div>
+<h2>Observatory (use_theme_colors: false)</h2>
+<div class="row" id="obs"></div>
+<script>
+const LAT = 43.0804, LON = -88.3415;
+const M = window.__SUN_CARDS__;
+const iso = (d) => d ? d.toISOString() : undefined;
+
+const now = new Date();
+const tb = M.buildDayTable(LAT, LON, now);
+const p = M.solarPos(now, LAT, LON);
+const nr = tb.rise && tb.rise > now ? tb.rise : new Date(tb.rise.getTime() + 864e5);
+const ns = tb.set && tb.set > now ? tb.set : new Date(tb.set.getTime() + 864e5);
+
+const mkHass = (wx) => ({
+  config: { latitude: LAT, longitude: LON, time_zone: 'America/Chicago' },
+  locale: { language: 'en', time_format: 'am_pm' },
+  states: {
+    'sun.sun': {
+      state: p.el > 0 ? 'above_horizon' : 'below_horizon',
+      attributes: { azimuth: p.az, elevation: p.el, next_rising: iso(nr), next_setting: iso(ns) },
+    },
+    'weather.kues': { state: wx, attributes: {} },
+    'input_boolean.shades_ignore_weather': { state: 'off', attributes: {} },
+    'cover.deck_door': { state: 'open', attributes: {} },
+    'cover.dining_room_somfyrts_living_room_shade': { state: 'open', attributes: {} },
+  },
+});
+
+const WALLS = [
+  { name: 'NW wall', bearing: 325, color: '#f2a35c', entity: 'cover.dining_room_somfyrts_living_room_shade' },
+  { name: 'SW wall', bearing: 236, color: '#8fa8d9', entity: 'cover.deck_door' },
+];
+
+function addCards(rowId, hass, extraCfg = {}) {
+  const cfgs = [
+    ['sun-cards-bearing', { heading: 325, walls: WALLS, sun_window: 78, min_elevation: 3,
+      weather_entity: 'weather.kues', bypass_entity: 'input_boolean.shades_ignore_weather' }],
+    ['sun-cards-elevation', {}],
+    ['sun-cards-path', { heading: 325, walls: WALLS }],
+  ];
+  for (const [tag, cfg] of cfgs) {
+    const card = document.createElement(tag);
+    card.setConfig({ ...cfg, ...extraCfg });
+    card.hass = hass;
+    const wrap = document.createElement('div');
+    wrap.className = 'col';
+    wrap.appendChild(card);
+    document.getElementById(rowId).appendChild(wrap);
+  }
+}
+
+addCards('themed', mkHass('sunny'));
+addCards('obs', mkHass('partlycloudy'), { use_theme_colors: false });
+
+console.log('STATE', { az: p.az.toFixed(1), el: p.el.toFixed(1),
+  rise: tb.rise?.toLocaleTimeString(), set: tb.set?.toLocaleTimeString() });
+
+// &row=themed / &row=obs — show a single row (used for README screenshots)
+const only = (/[?&]row=(\w+)/.exec(location.search) || [])[1];
+if (only) {
+  document.querySelectorAll('h2').forEach((h) => h.remove());
+  for (const id of ['themed', 'obs']) if (id !== only) document.getElementById(id).remove();
+}
+</script>
+</body>
+</html>
