@@ -13,7 +13,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.8.2';
+  const VERSION = '1.8.3';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -71,12 +71,23 @@
    *  px) when the host SVG is scaled, so every card renders the same size. */
   const SUN = { dot: 5, halo: 7, ring: 10, dash: [2.5, 3] };
   const HALO_FILL = 'var(--ha-card-background, var(--card-background-color, #1c1c1c))';
-  function sunMarker(x, y, color, C, { dim = 1 } = {}) {
+  /* `k` is user units per CSS px in the host SVG. Pass it whenever the caller
+     already knows the scale — the path charts do, since they derive every other
+     px-authored size the same way — and the radii come out right in the markup,
+     with no post-render DOM fixup and no dependence on when layout happens to
+     settle. Without it the marker is tagged for normalizeSunMarkers to size at
+     runtime, which is the only option for the compass: it is laid out by a
+     percentage width, so its scale is not known until the browser resolves it. */
+  function sunMarker(x, y, color, C, { dim = 1, k = 0 } = {}) {
+    const r = (px) => (k ? (px * k).toFixed(3) : px);
+    const dash = k ? SUN.dash.map((d) => (d * k).toFixed(3)).join(' ') : SUN.dash.join(' ');
+    const tag = k ? '' : ' data-sun';
+    const dataR = (px) => (k ? '' : ` data-r="${px}"`);
     return (
-      `<g data-sun>` +
-      `<circle cx="${x}" cy="${y}" data-r="${SUN.halo}" r="${SUN.halo}" fill="${HALO_FILL}" opacity="0.85"></circle>` +
-      `<circle cx="${x}" cy="${y}" data-r="${SUN.ring}" r="${SUN.ring}" fill="none" stroke="${color}" stroke-width="1" stroke-dasharray="${SUN.dash.join(' ')}" vector-effect="non-scaling-stroke" opacity="${(C.sunRing * dim).toFixed(2)}"></circle>` +
-      `<circle cx="${x}" cy="${y}" data-r="${SUN.dot}" r="${SUN.dot}" fill="${color}" opacity="${(C.sunFill * dim).toFixed(2)}"></circle>` +
+      `<g${tag}>` +
+      `<circle cx="${x}" cy="${y}"${dataR(SUN.halo)} r="${r(SUN.halo)}" fill="${HALO_FILL}" opacity="0.85"></circle>` +
+      `<circle cx="${x}" cy="${y}"${dataR(SUN.ring)} r="${r(SUN.ring)}" fill="none" stroke="${color}" stroke-width="1" stroke-dasharray="${dash}" vector-effect="non-scaling-stroke" opacity="${(C.sunRing * dim).toFixed(2)}"></circle>` +
+      `<circle cx="${x}" cy="${y}"${dataR(SUN.dot)} r="${r(SUN.dot)}" fill="${color}" opacity="${(C.sunFill * dim).toFixed(2)}"></circle>` +
       `</g>`
     );
   }
@@ -568,6 +579,7 @@
       clearInterval(this._timer);
       this._ro?.disconnect();
       if (this._raf) cancelAnimationFrame(this._raf);
+      if (this._normRaf) cancelAnimationFrame(this._normRaf);
       if (this._onWinResize) window.removeEventListener('resize', this._onWinResize);
     }
 
@@ -681,6 +693,22 @@
       } catch (e) {
         console.warn('sun-cards: post-render step failed', e);
       }
+      /* The pass above reads the live transform immediately after replacing the
+         markup, and inside HA that is often too early: the card is being sized
+         by the view around it, getScreenCTM still reports the pre-layout matrix,
+         and the compass marker is left scaled for a box it no longer occupies.
+         Re-run once the frame has settled. It recomputes from data-r rather than
+         from the current r, so running it any number of times is harmless. */
+      if (this._normRaf) cancelAnimationFrame(this._normRaf);
+      this._normRaf = requestAnimationFrame(() => {
+        this._normRaf = 0;
+        if (!this.isConnected || !this.shadowRoot) return;
+        try {
+          normalizeSunMarkers(this.shadowRoot);
+        } catch (e) {
+          console.warn('sun-cards: marker normalize failed', e);
+        }
+      });
     }
 
     /* A `[data-chart]` element means the card draws something whose viewBox is
@@ -908,7 +936,7 @@
              unscaled SVG instead, and stays a true circle at any card width -->
         <div style="position:absolute; left:${((nx / 280) * 100).toFixed(2)}%; top:${((ny * 96) / 98).toFixed(1)}px; transform:translate(-50%,-50%); pointer-events:none;">
           <svg width="${SUN.ring * 2 + 4}" height="${SUN.ring * 2 + 4}" viewBox="${-SUN.ring - 2} ${-SUN.ring - 2} ${SUN.ring * 2 + 4} ${SUN.ring * 2 + 4}" style="display:block; overflow:visible;" aria-hidden="true">
-            ${sunMarker(0, 0, C.blue, C)}
+            ${sunMarker(0, 0, C.blue, C, { k: 1 })}
           </svg>
         </div>
         </div>
@@ -994,7 +1022,7 @@
           ${cardinal(180, 'S', C.faint)}
           ${cardinal(270, 'W', C.faint)}
           <text x="298" y="${(VB_H - u(6)).toFixed(1)}" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="${F9}" letter-spacing="${u(1).toFixed(2)}">AZIMUTH \u2192 \u00b7 HEADING-UP ${heading}\u00b0</text>
-          ${sunMarker(sunX, sunY, C.blue, C)}
+          ${sunMarker(sunX, sunY, C.blue, C, { k: u(1) })}
         </svg>
         </div>
         </div>
@@ -1153,7 +1181,7 @@
                 ${hourMarks}
                 ${g.riseSet}
                 ${hourLabels}
-                ${sunMarker(sunX, sunY, C.blue, C)}
+                ${sunMarker(sunX, sunY, C.blue, C, { k: u(1) })}
               </svg>
             </div>`;
 
