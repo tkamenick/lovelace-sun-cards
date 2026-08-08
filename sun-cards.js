@@ -13,7 +13,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.8.3';
+  const VERSION = '1.8.4';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -567,6 +567,7 @@
       if (typeof ResizeObserver === 'function') {
         this._ro = new ResizeObserver(resync);
         this._ro.observe(this);
+        this._roChart = null; // _afterRender adds the chart box to the same observer
       }
       // backstop: catches window resizes even where ResizeObserver is
       // unavailable or throttled, and costs nothing when nothing changed
@@ -722,6 +723,19 @@
     _afterRender() {
       const el = this.shadowRoot && this.shadowRoot.querySelector('[data-chart]');
       if (!el) return;
+      /* Watch the chart, not just the card. The two do not change together: on
+         the wide card the chart shares its row with a compass sized as a
+         percentage, so when that compass resolves its width the chart narrows
+         while the card's own box never moves. The card-level observer sees
+         nothing, this pass is never called again, and the chart stays drawn for
+         a box it no longer occupies — every px-authored size in it (labels,
+         ticks, the sun) then renders at the wrong scale. Fonts landing and a
+         theme changing padding do the same thing. */
+      if (this._ro && this._roChart !== el) {
+        if (this._roChart) this._ro.unobserve(this._roChart);
+        this._ro.observe(el);
+        this._roChart = el;
+      }
       const r = el.getBoundingClientRect();
       if (r.width < 60 || r.height < 60) return; // not laid out yet
       const b = this._box;
