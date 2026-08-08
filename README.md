@@ -146,6 +146,9 @@ a third of a desktop row or the full width of a phone) and draws one of two layo
 | **≥ 520 px** | Compass on the left, elevation reading and sun path to the right. The compass keeps a constant share of the width (23%, capped at 260 px), so a wider dashboard grows the plan view too — not just the chart. |
 | **< 520 px** | Compass, elevation reading and sun path stack, each taking the **full card width** — sharing a line only looks like a saving, since it shrinks the compass to a token beside a full-width chart. Below ~380 px of chart the hour labels thin from every third hour to every sixth, so they never collide. |
 
+<img src="docs/sun-cards-phone.png" alt="The wide card stacked at phone width" width="360">
+
+
 This works because the card requests `rows: auto` rather than a fixed row count — it sizes to its
 own content, so the taller stacked layout has somewhere to go. The chart carries its height as an
 aspect ratio (floor 110 px, ceiling 240 px) so it stays in proportion from 320 px to 1240 px
@@ -192,8 +195,25 @@ alternative underneath.
 dark theme — including the wide card twice, full width and at phone width, so both of its
 layouts are visible at once. Serve the repo root (`python3 -m http.server`) and open
 `/dev/harness.html`.
-Add `?t=HHMM` to stage the clock (e.g. `?t=1730` for golden hour) and `&row=dark|light` to
-isolate one theme.
+
+| Query param | Effect |
+|---|---|
+| `?t=HHMM` | Stage the clock — `?t=1730` for golden hour, `?t=2200` for night |
+| `&row=dark` / `&row=light` | Isolate one theme |
+| `&show=cards` | Drop the phone-width column |
+| `&show=phone` | Show *only* the phone-width column |
+
+The README images are rendered from it with headless Chrome at 2×:
+
+```bash
+python3 -m http.server 8810 & \
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu \
+  --hide-scrollbars --force-device-scale-factor=2 --run-all-compositor-stages-before-draw \
+  --virtual-time-budget=5000 --window-size=1140,883 --screenshot=docs/sun-cards-dark.png \
+  "http://127.0.0.1:8810/dev/harness.html?t=1730&row=dark&show=cards"
+```
+
+(`--headless=new` hangs on this page; the old headless mode exits cleanly.)
 
 ## License
 

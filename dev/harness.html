@@ -145,6 +145,17 @@ if (only) {
   if (only === 'light') document.body.style.background = '#f2f4f7';
   document.getElementById('light-wrap')?.style.setProperty('padding', '0');
 }
+
+// &show=phone — just the wide card at phone width; &show=cards — everything but
+// that column. The phone column is a dev aid, so README shots pick one or the
+// other rather than showing the wide card twice in the same image.
+const show = (/[?&]show=(\w+)/.exec(location.search) || [])[1];
+if (show === 'phone') {
+  document.querySelectorAll('.col:not(.phone)').forEach((e) => e.remove());
+  document.querySelectorAll('.hdg').forEach((e) => e.remove());
+} else if (show === 'cards') {
+  document.querySelectorAll('.col.phone').forEach((e) => e.remove());
+}
 </script>
 </body>
 </html>
