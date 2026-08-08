@@ -54,6 +54,16 @@ wall arcs and the day curve — is drawn at the same on-screen size in every car
 width. Its color differs by card (amber on the compass, blue on the two charts) so it always
 contrasts with the artwork underneath it.
 
+On the compass and the two path charts it is drawn **inside** the chart's own SVG, and its
+radius is converted to user units at runtime from the live transform. That is what keeps it
+exactly on the curve while a window is being dragged: an HTML overlay has to be positioned in
+percentages of its container, which only coincides with the chart's coordinates while the
+container's aspect ratio matches the viewBox's — and since the viewBox height is derived from
+the last measured box, it lags a frame mid-drag and the two spaces pull apart. The elevation
+card is the exception: that chart is drawn with `preserveAspectRatio="none"`, which would squash
+the marker into an ellipse, so there it stays an overlay (and needs no correction, since a
+stretched mapping is linear in both axes).
+
 ### `walls` (bearing, path + wide cards)
 
 ```yaml

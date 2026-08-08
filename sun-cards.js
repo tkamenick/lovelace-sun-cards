@@ -13,7 +13,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.8.1';
+  const VERSION = '1.8.2';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -84,7 +84,19 @@
   /* Each card's SVG is scaled differently (the compass is fixed-size, the path
      chart scales with the card width), so a fixed radius would render at a
      different size in each one. Convert the px sizes above into user units
-     using the live transform, so every marker is the same size on screen. */
+     using the live transform, so every marker is the same size on screen.
+
+     This is also why the sun is drawn *inside* the chart SVG rather than as an
+     HTML overlay positioned over it. An overlay has to be placed in percentages
+     of the container, and that only lands on the curve while the container's
+     aspect ratio matches the viewBox's. The viewBox height is derived from the
+     last measured box, so during a live window drag it lags by a frame,
+     preserveAspectRatio="meet" letterboxes to make up the difference, and the
+     two coordinate spaces drift apart — the sun visibly slid off the arc while
+     resizing and snapped back on release. In the chart's own coordinates it
+     cannot drift: a stale viewBox scales the curve and the marker together.
+     (The elevation card still needs the overlay — that chart is drawn with
+     preserveAspectRatio="none", which would squash the marker into an ellipse.) */
   function normalizeSunMarkers(root) {
     root.querySelectorAll('g[data-sun]').forEach((g) => {
       const svg = g.ownerSVGElement;
@@ -480,17 +492,6 @@
     }
 
     return { u, bx, Y, box, VB_H, yTop, yHor, F8, F9, F10, defs, bands, headingMark, curve, riseSet };
-  }
-
-  /* The chart is scaled to fit its card, which would stretch a marker drawn
-     inside it — so the sun rides above the chart in its own unscaled SVG and
-     stays a true circle, the same size, at any card width. */
-  function sunOverlay(leftPct, topPct, color, C) {
-    return `<div style="position:absolute; left:${leftPct}%; top:${topPct}%; transform:translate(-50%,-50%); pointer-events:none;">
-          <svg width="${SUN.ring * 2 + 4}" height="${SUN.ring * 2 + 4}" viewBox="${-SUN.ring - 2} ${-SUN.ring - 2} ${SUN.ring * 2 + 4} ${SUN.ring * 2 + 4}" style="display:block; overflow:visible;" aria-hidden="true">
-            ${sunMarker(0, 0, color, C)}
-          </svg>
-        </div>`;
   }
 
   /* ── base card ──────────────────────────────────────────────────────── */
@@ -993,8 +994,8 @@
           ${cardinal(180, 'S', C.faint)}
           ${cardinal(270, 'W', C.faint)}
           <text x="298" y="${(VB_H - u(6)).toFixed(1)}" text-anchor="end" fill="${C.ghost}" font-family="${MONO_SVG}" font-size="${F9}" letter-spacing="${u(1).toFixed(2)}">AZIMUTH \u2192 \u00b7 HEADING-UP ${heading}\u00b0</text>
+          ${sunMarker(sunX, sunY, C.blue, C)}
         </svg>
-        ${sunOverlay(((Number(sunX) / 300) * 100).toFixed(3), ((Number(sunY) / VB_H) * 100).toFixed(3), C.blue, C)}
         </div>
         </div>
         <div style="display:flex; justify-content:space-between; gap:12px; padding-top:14px; border-top:1px solid ${C.divider}; margin-top:10px;">
@@ -1140,7 +1141,9 @@
                  decides that height — the SVG would fall back to its viewBox aspect
                  and grow the very box it was measured from. Out of flow, it can't.
                  The ceiling keeps a very wide card from turning the chart into a
-                 billboard; the floor keeps a very narrow one legible. -->
+                 billboard; the floor keeps a very narrow one legible.
+                 The sun rides *inside* the chart SVG rather than as an overlay on
+                 top of it — see sunMarker/normalizeSunMarkers for why. -->
             <div data-chart style="position:relative; flex:1 1 auto; aspect-ratio:${aspect}; min-height:110px; max-height:${maxH}px; margin-top:6px;">
               <svg viewBox="0 0 300 ${VB_H.toFixed(1)}" preserveAspectRatio="xMidYMid meet" style="position:absolute; inset:0; width:100%; height:100%; display:block; overflow:visible;" role="img" aria-label="Sun path today">
                 ${g.defs}
@@ -1150,8 +1153,8 @@
                 ${hourMarks}
                 ${g.riseSet}
                 ${hourLabels}
+                ${sunMarker(sunX, sunY, C.blue, C)}
               </svg>
-              ${sunOverlay(((Number(sunX) / 300) * 100).toFixed(3), ((Number(sunY) / VB_H) * 100).toFixed(3), C.blue, C)}
             </div>`;
 
       const reading = (size) => `
