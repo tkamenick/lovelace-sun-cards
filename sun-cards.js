@@ -13,7 +13,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.8.4';
+  const VERSION = '1.8.5';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -1084,8 +1084,6 @@
       return { columns: 'full', rows: 'auto', min_columns: 6 };
     }
 
-    // below this the compass and chart stop sharing a row and stack instead
-    static NARROW = 520;
 
     _template() {
       const C = this._pal();
@@ -1097,21 +1095,13 @@
       const now = new Date();
       const lit = this._litWalls(tb);
 
-      /* Which layout to draw is decided from the card's own width, not the
-         window's: the same dashboard can hand this card a third of a desktop
-         row or the full width of a phone, and only the card knows which it
-         got. A first paint with no width yet draws wide, then _afterRender
-         measures and settles it on the next frame. */
-      const hostW = this.getBoundingClientRect().width;
-      const narrow = hostW > 0 && hostW < this.constructor.NARROW;
-
       const g = pathChart({
         tb,
         lit,
         C,
         hass,
         heading,
-        box: this._box || { w: narrow ? 340 : 420, h: 190 },
+        box: this._box || { w: 420, h: 220 }, // only until the first measurement lands
         latlon: this._latlon(),
         footerPx: 46, // hour labels and rise/set labels — no cardinals, no caption
       });
@@ -1178,66 +1168,80 @@
          for one from above. With `rows: auto` there is no height to inherit, so
          this is what gives it a shape; when the card is pinned to a row count
          instead, flex-grow takes over and it fills the space it is given. */
-      const chart = (aspect, maxH) => `
-            <!-- Measured to derive its own viewBox height, so it must never be what
-                 decides that height — the SVG would fall back to its viewBox aspect
-                 and grow the very box it was measured from. Out of flow, it can't.
-                 The ceiling keeps a very wide card from turning the chart into a
-                 billboard; the floor keeps a very narrow one legible.
-                 The sun rides *inside* the chart SVG rather than as an overlay on
-                 top of it — see sunMarker/normalizeSunMarkers for why. -->
-            <div data-chart style="position:relative; flex:1 1 auto; aspect-ratio:${aspect}; min-height:110px; max-height:${maxH}px; margin-top:6px;">
-              <svg viewBox="0 0 300 ${VB_H.toFixed(1)}" preserveAspectRatio="xMidYMid meet" style="position:absolute; inset:0; width:100%; height:100%; display:block; overflow:visible;" role="img" aria-label="Sun path today">
-                ${g.defs}
-                ${g.bands}
-                ${g.headingMark}
-                ${g.curve}
-                ${hourMarks}
-                ${g.riseSet}
-                ${hourLabels}
-                ${sunMarker(sunX, sunY, C.blue, C, { k: u(1) })}
-              </svg>
-            </div>`;
+      /* Layout is decided by CSS, not by measuring. The card used to read its
+         own width during render and branch in JS, with the correction deferred to
+         an animation frame — so a fresh load could paint the wrong layout, and a
+         background tab could keep it. A container query settles it at layout time,
+         on the first paint, every time.
 
-      const reading = (size) => `
-            <div style="display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;">
-              <div style="font-size:${size}px; font-weight:600; line-height:1; color:${C.text}; letter-spacing:-0.02em;">${fmtSigned(el)}</div>
-              <div style="font-family:${MONO}; font-size:11px; color:${below ? C.blue : C.orange};">${status}</div>
-            </div>`;
-
-      /* Narrow: the two drawings each get the full width, stacked, in the same
-         order they read left-to-right when the card is wide — compass, then the
-         elevation, then the day path. Sharing a line only looks like a saving:
-         it shrinks the compass to a token beside a chart running the full width,
-         and the sun marker (a fixed on-screen size in every card) then looms over
-         a ring too small to hold it. The cap keeps the compass from ballooning on
-         a card that is narrow but not phone-narrow. */
-      const body = narrow
-        ? `<div style="display:flex; justify-content:center; padding-top:8px;">
-            <div style="width:100%; max-width:240px;">
-              ${compassSvg({ heading, az, el, lit, C, size: 240, style: 'display:block; width:100%; height:auto;' })}
-            </div>
-          </div>
-          <div style="padding-top:10px;">${reading(38)}</div>
-          ${chart('8 / 5', 240)}`
-        : `<div style="display:flex; gap:clamp(16px, 3%, 32px); align-items:stretch; flex:1 1 auto; min-height:0; padding-top:6px;">
-            <!-- the compass keeps its share of a card that can be any width, so a
-                 wide dashboard grows the plan view instead of only the chart -->
-            <div style="flex:0 0 auto; width:clamp(150px, 23%, 260px); display:flex; align-items:center; justify-content:center;">
-              ${compassSvg({ heading, az, el, lit, C, size: 200, style: 'display:block; width:100%; height:auto;' })}
-            </div>
-            <div style="flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column;">
-              ${reading(44)}
-              ${chart('5 / 2', 240)}
-            </div>
-          </div>`;
+         The chart's height is a constant per layout rather than an aspect ratio.
+         Deriving height from width meant the card's whole height tracked its
+         width, so dragging the window reflowed everything below it on the
+         dashboard, and `rows: auto` fed that back into the grid. Dragging now
+         changes only how wide the chart is. */
+      const style = `<style>
+          .wrap { container-type:inline-size; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+          .body { display:flex; flex-direction:row; gap:clamp(16px,3%,32px); align-items:stretch; padding-top:6px; }
+          .compass { flex:0 0 auto; width:clamp(150px,23%,260px); display:flex; align-items:center; justify-content:center; }
+          .compass svg { display:block; width:100%; height:auto; }
+          .right { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; }
+          .read { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+          .num { font-size:44px; font-weight:600; line-height:1; letter-spacing:-0.02em; color:${C.text}; }
+          .sub { font-family:${MONO}; font-size:11px; color:${below ? C.blue : C.orange}; }
+          .chart { position:relative; height:220px; margin-top:6px; }
+          .foot { display:flex; gap:20px; align-items:center; flex-wrap:wrap;
+                  padding-top:14px; border-top:1px solid ${C.divider}; margin-top:auto; }
+          /* below this the compass and the path stop sharing a row: side by side
+             the compass shrinks to a token beside a full-width chart, and the sun
+             marker is a fixed on-screen size, so it looms over a ring too small
+             to hold it. Stacked, each drawing gets the full width. */
+          /* 468px of content box = a ~520px card, since _card() spends 52px on
+             horizontal padding and the container is measured inside it */
+          @container (max-width: 467px) {
+            .body { flex-direction:column; gap:0; padding-top:8px; }
+            .compass { width:100%; max-width:240px; margin:0 auto; }
+            .right { margin-top:12px; }
+            .num { font-size:34px; }
+            .chart { height:180px; }
+          }
+        </style>`;
 
       return this._card(`
-        ${this._header(c.name, `heading-up · ${heading}°`)}
-        ${body}
-        <div style="display:flex; gap:20px; align-items:center; flex-wrap:wrap; padding-top:14px; border-top:1px solid ${C.divider}; margin-top:auto;">
-          ${chips}${wxChip}
-          <span style="margin-left:auto; font-family:${MONO}; font-size:11px; color:${C.orange}; white-space:nowrap;">${daylight}</span>
+        ${this._header(c.name, `heading-up \u00b7 ${heading}\u00b0`)}
+        ${style}
+        <div class="wrap">
+          <div class="body">
+            <div class="compass">
+              ${compassSvg({ heading, az, el, lit, C, size: 240, style: 'display:block; width:100%; height:auto;' })}
+            </div>
+            <div class="right">
+              <div class="read">
+                <div class="num">${fmtSigned(el)}</div>
+                <div class="sub">${status}</div>
+              </div>
+              <!-- Measured to derive its own viewBox height, so it must never be what
+                   decides that height — the SVG would fall back to its viewBox aspect
+                   and grow the very box it was measured from. Out of flow, it can't.
+                   The sun rides *inside* this SVG rather than as an overlay on top of
+                   it — see sunMarker/normalizeSunMarkers for why. -->
+              <div data-chart class="chart">
+                <svg viewBox="0 0 300 ${VB_H.toFixed(1)}" preserveAspectRatio="xMidYMid meet" style="position:absolute; inset:0; width:100%; height:100%; display:block; overflow:visible;" role="img" aria-label="Sun path today">
+                  ${g.defs}
+                  ${g.bands}
+                  ${g.headingMark}
+                  ${g.curve}
+                  ${hourMarks}
+                  ${g.riseSet}
+                  ${hourLabels}
+                  ${sunMarker(sunX, sunY, C.blue, C, { k: u(1) })}
+                </svg>
+              </div>
+            </div>
+          </div>
+          <div class="foot">
+            ${chips}${wxChip}
+            <span style="margin-left:auto; font-family:${MONO}; font-size:11px; color:${C.orange}; white-space:nowrap;">${daylight}</span>
+          </div>
         </div>`);
     }
   }
