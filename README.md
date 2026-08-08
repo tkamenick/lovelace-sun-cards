@@ -1,7 +1,8 @@
 # Sun Cards
 
-Three custom Lovelace cards for Home Assistant that show where the sun is relative to your
-house — a compass, an elevation chart, and a sun-path chart, drawn in one shared style.
+Four custom Lovelace cards for Home Assistant that show where the sun is relative to your
+house — a compass, an elevation chart, and a sun-path chart, drawn in one shared style, plus
+a wide card that folds all three into a single full-width panel.
 
 ![Sun Cards on a dark Home Assistant theme](docs/sun-cards-dark.png)
 
@@ -15,8 +16,9 @@ amber/blue data accents to deeper variants on light themes so everything stays r
 | **Bearing** | `custom:sun-cards-bearing` | Heading-up compass: sun position, wall arcs, sun-on-glass time windows, optional weather-gate status |
 | **Elevation** | `custom:sun-cards-elevation` | Current elevation, 24 h curve with daylight highlight, min/max, sunrise/sunset countdown |
 | **Path** | `custom:sun-cards-path` | Today's sun path (elevation vs azimuth, heading-up), wall bands, rise/set/noon markers |
+| **Wide** | `custom:sun-cards-wide` | All three in one full-width card: compass, elevation, and the day path on an hour axis |
 
-All three are bundled in a single file with no dependencies. The full-day curves, rise/set
+All four are bundled in a single file with no dependencies. The full-day curves, rise/set
 markers, min/max, and sun-on-glass windows are computed **in-card** from your Home Assistant
 latitude/longitude (NOAA solar algorithm, ±2 min / ±0.3°). The *live* sun position comes from
 `sun.sun` (or sensor overrides), so the cards update as HA does.
@@ -41,17 +43,18 @@ HACS registers the resource automatically. For manual installs, copy `sun-cards.
 | `latitude` / `longitude` | HA location | Override the coordinates used for the day curves |
 | `load_fonts` | `true` | Load the card fonts (Familjen Grotesk / Fragment Mono) from Google Fonts. Set `false` for fully offline dashboards — falls back to system fonts |
 
-In sections-layout dashboards all three cards default to the **same height** (6 grid rows) so
-they line up side by side; the internals absorb any slack (the compass centers itself, charts
-float, footers pin to the bottom). Resize any card via its layout options (`grid_options:
-rows`) if you want a different height.
+In sections-layout dashboards the three narrow cards default to the **same height** (6 grid
+rows) so they line up side by side; the internals absorb any slack (the compass centers itself,
+charts float, footers pin to the bottom). The wide card asks for `rows: auto` instead, since it
+changes shape with its width — see below. Resize any card via its layout options
+(`grid_options: rows`) if you want a different height.
 
 The sun marker — a dot inside a dashed ring, with a knockout halo so it stays legible over
 wall arcs and the day curve — is drawn at the same on-screen size in every card, at any card
 width. Its color differs by card (amber on the compass, blue on the two charts) so it always
 contrasts with the artwork underneath it.
 
-### `walls` (bearing + path cards)
+### `walls` (bearing, path + wide cards)
 
 ```yaml
 walls:
@@ -68,7 +71,7 @@ accent (amber, blue, green, pink), which keeps it readable on both light and dar
 |---|---|---|
 | `heading` | `325` | Compass bearing rendered "up" on the bearing compass and path chart |
 
-### Sun-on-glass rule (bearing + path cards)
+### Sun-on-glass rule (bearing, path + wide cards)
 
 | Option | Default | Description |
 |---|---|---|
@@ -87,7 +90,7 @@ a band where the sun never travels in the current season, making it look as thou
 before it ever reached those windows. A faint tick on the compass still marks each wall's
 bearing, so its orientation reads even on a day it gets no sun at all.
 
-### Bearing card only
+### Weather gate (bearing + wide cards)
 
 | Option | Default | Description |
 |---|---|---|
@@ -95,15 +98,77 @@ bearing, so its orientation reads even on a day it gets no sun at all.
 | `bypass_entity` | — | `input_boolean`; when `on` the row shows **gate bypassed** |
 | `sunny_conditions` | `[sunny, partlycloudy, windy]` | Conditions that count as "gate open"; anything else shows **cloud hold** |
 
+## The wide card
+
+`custom:sun-cards-wide` is the same three drawings in one full-width card, for dashboards with
+a row to spare. It takes the same options as the bearing and path cards combined — `heading`,
+`walls`, `sun_window`, `min_elevation`, and the optional weather gate — and needs no extra
+configuration.
+
+It is deliberately **not** the three cards stacked. Everything the narrow set could only repeat
+is cut: no "below horizon" caption beside an already-negative number, no min/max column, no
+bearing restated in a footer next to a compass that is showing it. The row that frees up goes to
+an **hour axis along the sun path** — whole-hour dots on the day arc, every third one labeled —
+which is the reading a narrow path card never had room for, and the reason to put the compass
+and the path on one card: you can see where the sun is, how high, and what time it reaches each
+wall without moving between three headers.
+
+### It is responsive — one card, phone to desktop
+
+The card reads **its own rendered width** (not the window's, since the same dashboard can hand it
+a third of a desktop row or the full width of a phone) and draws one of two layouts:
+
+| Card width | Layout |
+|---|---|
+| **≥ 520 px** | Compass on the left, elevation reading and sun path to the right. The compass keeps a constant share of the width (23%, capped at 260 px), so a wider dashboard grows the plan view too — not just the chart. |
+| **< 520 px** | Compass and reading share the top line, the sun path takes the full width beneath, and the wall legend stacks. Below ~380 px of chart the hour labels thin from every third hour to every sixth, so they never collide. |
+
+This works because the card requests `rows: auto` rather than a fixed row count — it sizes to its
+own content, so the taller stacked layout has somewhere to go. The chart carries its height as an
+aspect ratio (floor 110 px, ceiling 240 px) so it stays in proportion from 320 px to 1240 px
+instead of turning into a letterbox strip on a wide screen. Pin it with `grid_options: rows` if
+you want a specific height; the chart will fill whatever it is given.
+
+Verified from 320 px to 1240 px: nothing overflows the card at any width, and the layout settles
+in a single measure pass with no reflow thrash.
+
+### If you want different cards on phone vs. desktop anyway
+
+You don't need to — but HA supports it, via a `visibility` block with a `screen` condition on any
+card (evaluated with `matchMedia`, so any CSS media query works):
+
+```yaml
+# wide card on desktop and larger
+- type: custom:sun-cards-wide
+  heading: 325
+  visibility:
+    - condition: screen
+      media_query: "(min-width: 1024px)"
+
+# the three narrow cards on phone/tablet
+- type: custom:sun-cards-bearing
+  heading: 325
+  visibility:
+    - condition: screen
+      media_query: "(max-width: 1023px)"
+```
+
+The presets behind HA's UI checkboxes are `mobile` 0–767 px, `tablet` 768–1023 px,
+`desktop` 1024–1279 px, `wide` ≥ 1280 px. Note these match the **browser window**, not the card —
+which is why the wide card does its own width-based switching rather than relying on them.
+
 ## Example: 3-column sections view
 
 See [examples/sun-shades-view.yaml](examples/sun-shades-view.yaml) for a complete sections-layout
-view (one card per column) wired to real entities.
+view (one card per column) wired to real entities, with the wide card as a full-width
+alternative underneath.
 
 ## Development
 
-`dev/harness.html` renders all three cards against a mock `hass` object, on both a light and a
-dark theme — serve the repo root (`python3 -m http.server`) and open `/dev/harness.html`.
+`dev/harness.html` renders all four cards against a mock `hass` object, on both a light and a
+dark theme — including the wide card twice, full width and at phone width, so both of its
+layouts are visible at once. Serve the repo root (`python3 -m http.server`) and open
+`/dev/harness.html`.
 Add `?t=HHMM` to stage the clock (e.g. `?t=1730` for golden hour) and `&row=dark|light` to
 isolate one theme.
 

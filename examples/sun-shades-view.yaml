@@ -1,7 +1,8 @@
-# Sections-layout view for the "sun-shades" dashboard (3 columns, one card per column).
+# Sections-layout view for the "sun-shades" dashboard (3 columns, one card per column),
+# with the wide card as a full-width alternative in a fourth section.
 # Storage-mode dashboards: open the dashboard → pencil → three-dot menu →
-# "Raw configuration editor" and merge this view in (or add the three cards by hand
-# from the card picker — they appear as "Sun Cards · Bearing / Elevation / Path").
+# "Raw configuration editor" and merge this view in (or add the cards by hand from the
+# card picker — they appear as "Sun Cards · Bearing / Elevation / Path / Wide").
 
 title: Sun & Shades
 path: sun-shades
@@ -53,3 +54,27 @@ sections:
         min_elevation: 3
         azimuth_entity: sensor.sun_azimuth
         elevation_entity: sensor.sun_elevation
+
+  # The same three drawings in one full-width card. Use this *instead of* the three
+  # columns above if you would rather spend a whole row than a whole section — it
+  # wants the width, so give it a section of its own (column_span: 3).
+  - type: grid
+    column_span: 3
+    cards:
+      - type: heading
+        heading: Sun
+      - type: custom:sun-cards-wide
+        heading: 325
+        walls:
+          - name: NW wall
+            bearing: 325
+            entity: cover.dining_room_somfyrts_living_room_shade
+          - name: SW wall
+            bearing: 236
+            entity: cover.deck_door
+        sun_window: 78
+        min_elevation: 3
+        azimuth_entity: sensor.sun_azimuth
+        elevation_entity: sensor.sun_elevation
+        weather_entity: weather.kues
+        bypass_entity: input_boolean.shades_ignore_weather
