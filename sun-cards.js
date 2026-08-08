@@ -13,7 +13,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.8.0';
+  const VERSION = '1.8.1';
   const REPO = 'https://github.com/tkamenick/lovelace-sun-cards';
 
   /* ── palette ────────────────────────────────────────────────────────────
@@ -343,7 +343,27 @@
     const F8 = u(8).toFixed(2);
     const F9 = u(9).toFixed(2);
     const F10 = u(10).toFixed(2);
-    const Y = (e) => (e >= 0 ? yHor - (e / maxEl) * (yHor - yTop) : yHor + (-e / -minEl) * nightDepth);
+    /* The night runs about half as deep again as the day runs high, but it
+       must not take that share of the chart — so it is compressed. How it is
+       compressed is what the eye notices at the horizon crossing.
+
+       A separate linear scale (the original) meets the horizon at a corner:
+       the day arc arrives steep and the night leaves nearly flat, at roughly a
+       third of the incoming rate. That corner is what made the sun marker at
+       night look like it had come loose from the curve — the arc the eye
+       extrapolates is not the one it lands on.
+
+       Matching the day's rate exactly overshoots the other way: the curve then
+       has to shed all that depth inside a shallow band and saturates into a
+       flat plateau across most of the night.
+
+       tanh with the knee at half the uncompressed depth splits it: the curve
+       leaves the horizon at ~2/3 of the day's rate and keeps bending the whole
+       way down, bottoming out just shy of the band. It reads as the same arc,
+       foreshortened — which is what it is. */
+    const perDeg = (yHor - yTop) / maxEl; // viewBox units per degree of elevation
+    const knee = Math.max(1e-6, (Math.abs(minEl) * perDeg) / 2);
+    const Y = (e) => (e >= 0 ? yHor - e * perDeg : yHor + nightDepth * Math.tanh((-e * perDeg) / knee));
 
     // curve segments, broken where the heading-up x-axis wraps
     const segs = [];
@@ -1140,21 +1160,21 @@
               <div style="font-family:${MONO}; font-size:11px; color:${below ? C.blue : C.orange};">${status}</div>
             </div>`;
 
-      /* Narrow: the compass pairs with the reading on one line — both are small,
-         and side by side they cost one band of height instead of two — and the
-         chart takes the full width underneath, where it needs every pixel to
-         keep the hour axis legible. */
+      /* Narrow: the two drawings each get the full width, stacked, in the same
+         order they read left-to-right when the card is wide — compass, then the
+         elevation, then the day path. Sharing a line only looks like a saving:
+         it shrinks the compass to a token beside a chart running the full width,
+         and the sun marker (a fixed on-screen size in every card) then looms over
+         a ring too small to hold it. The cap keeps the compass from ballooning on
+         a card that is narrow but not phone-narrow. */
       const body = narrow
-        ? `<div style="display:flex; gap:16px; align-items:center; padding-top:6px;">
-            <!-- not smaller than this: the sun marker is a fixed on-screen size in
-                 every card, so shrinking the compass only makes the marker loom
-                 larger over the ring it is supposed to sit on -->
-            <div style="flex:0 0 auto; width:132px;">
-              ${compassSvg({ heading, az, el, lit, C, size: 132, style: 'display:block; width:100%; height:auto;' })}
+        ? `<div style="display:flex; justify-content:center; padding-top:8px;">
+            <div style="width:100%; max-width:240px;">
+              ${compassSvg({ heading, az, el, lit, C, size: 240, style: 'display:block; width:100%; height:auto;' })}
             </div>
-            <div style="flex:1 1 auto; min-width:0;">${reading(34)}</div>
           </div>
-          ${chart('12 / 5', 220)}`
+          <div style="padding-top:10px;">${reading(38)}</div>
+          ${chart('8 / 5', 240)}`
         : `<div style="display:flex; gap:clamp(16px, 3%, 32px); align-items:stretch; flex:1 1 auto; min-height:0; padding-top:6px;">
             <!-- the compass keeps its share of a card that can be any width, so a
                  wide dashboard grows the plan view instead of only the chart -->

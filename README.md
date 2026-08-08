@@ -83,6 +83,19 @@ from them: the per-wall times, the glowing dot, the compass arc, and the path-ch
 They intentionally mirror the `fov` / `min_elevation` inputs of a sun-glare shade automation,
 so the card and the automation agree about when the sun is on a given window.
 
+### How the night is drawn (path + wide cards)
+
+The sun path shows a full 24 hours, but the night runs about half as deep as the day runs high
+and must not take that share of the chart. It is compressed — smoothly, with a `tanh` knee set
+at half the uncompressed depth, so the curve leaves the horizon at roughly two thirds of the rate
+it arrived and keeps bending all the way to the bottom of the night.
+
+That sounds like a detail, but it is the difference between one continuous arc and two unrelated
+shapes. Compressing the night on its own linear scale meets the horizon at a visible corner: the
+day arc plunges, the night leaves nearly flat, and the sun marker after sunset then looks like it
+has come loose from the curve — the arc your eye extrapolates is not the one it lands on.
+Matching the day's rate exactly overshoots instead, flattening the night into a plateau.
+
 A wall is drawn as **the stretch of sky the sun actually crosses while lighting it today** —
 not the window's full ±78° acceptance cone. That distinction matters: the sun only ever
 traverses part of the cone, and which part shifts through the year. Drawing the cone would put
@@ -121,7 +134,7 @@ a third of a desktop row or the full width of a phone) and draws one of two layo
 | Card width | Layout |
 |---|---|
 | **≥ 520 px** | Compass on the left, elevation reading and sun path to the right. The compass keeps a constant share of the width (23%, capped at 260 px), so a wider dashboard grows the plan view too — not just the chart. |
-| **< 520 px** | Compass and reading share the top line, the sun path takes the full width beneath, and the wall legend stacks. Below ~380 px of chart the hour labels thin from every third hour to every sixth, so they never collide. |
+| **< 520 px** | Compass, elevation reading and sun path stack, each taking the **full card width** — sharing a line only looks like a saving, since it shrinks the compass to a token beside a full-width chart. Below ~380 px of chart the hour labels thin from every third hour to every sixth, so they never collide. |
 
 This works because the card requests `rows: auto` rather than a fixed row count — it sizes to its
 own content, so the taller stacked layout has somewhere to go. The chart carries its height as an
